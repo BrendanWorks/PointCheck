@@ -62,7 +62,8 @@ class WCAGAgent:
         _pu.ProcessorMixin.__init__ = _lenient_init
 
         self.processor = AutoProcessor.from_pretrained(
-            model_name, trust_remote_code=True
+            model_name, trust_remote_code=True,
+            padding_side="left",
         )
 
         model_kwargs = {
@@ -87,48 +88,39 @@ class WCAGAgent:
         self.model.eval()
 
         # Monkey-patch prepare_inputs_for_generation to handle cache_position=None
-        # (transformers 5.x removed cache_position but the model code still expects it)
+        # (transformers 5.x stopped passing cache_position but the Molmo2 model code
+        # still does cache_position[0], which crashes with NoneType.
+        # FIX: wrap the ORIGINAL method and synthesize a valid cache_position
+        # so Molmo2's own image-embedding logic runs correctly.)
         _orig_prepare = self.model.prepare_inputs_for_generation
 
         def _patched_prepare(input_ids, past_key_values=None, cache_position=None, **kwargs):
-            # Determine if this is the prefill (first) step
-            is_prefill = (
-                (cache_position is not None and cache_position[0] == 0)
-                or (cache_position is None and past_key_values is None)
-            )
-
-            # Extract image kwargs before calling parent
-            pixel_values = kwargs.pop("pixel_values", None)
-            image_token_pooling = kwargs.pop("image_token_pooling", None)
-            image_grids = kwargs.pop("image_grids", None)
-            image_num_crops = kwargs.pop("image_num_crops", None)
-            pixel_values_videos = kwargs.pop("pixel_values_videos", None)
-            video_token_pooling = kwargs.pop("video_token_pooling", None)
-            video_grids = kwargs.pop("video_grids", None)
-
-            # Call grandparent's prepare_inputs (skip the broken override)
-            from transformers import GenerationMixin
-            model_inputs = GenerationMixin.prepare_inputs_for_generation(
-                self.model, input_ids,
+            if cache_position is None:
+                if past_key_values is None:
+                    # Prefill step: positions 0 .. seq_len-1
+                    cache_position = torch.arange(
+                        input_ids.shape[1], device=input_ids.device
+                    )
+                else:
+                    # Decode step: single position after the cached sequence
+                    if hasattr(past_key_values, "get_seq_length"):
+                        past_len = past_key_values.get_seq_length()
+                    elif isinstance(past_key_values, (list, tuple)) and len(past_key_values) > 0:
+                        past_len = past_key_values[0][0].shape[2]
+                    else:
+                        past_len = input_ids.shape[1]
+                    cache_position = torch.tensor(
+                        [past_len], device=input_ids.device
+                    )
+            return _orig_prepare(
+                input_ids,
                 past_key_values=past_key_values,
                 cache_position=cache_position,
                 **kwargs,
             )
 
-            # Only pass image data on the first (prefill) step
-            if is_prefill:
-                model_inputs["pixel_values"] = pixel_values
-                model_inputs["image_token_pooling"] = image_token_pooling
-                model_inputs["image_grids"] = image_grids
-                model_inputs["image_num_crops"] = image_num_crops
-                model_inputs["pixel_values_videos"] = pixel_values_videos
-                model_inputs["video_token_pooling"] = video_token_pooling
-                model_inputs["video_grids"] = video_grids
-
-            return model_inputs
-
         self.model.prepare_inputs_for_generation = _patched_prepare
-        print("WCAG agent ready (with cache_position patch)")
+        print("WCAG agent ready (with cache_position shim)")
 
     async def analyze_screenshot(
         self, screenshot: Image.Image, prompt: str
@@ -144,45 +136,57 @@ class WCAGAgent:
     def _analyze_sync(self, screenshot: Image.Image, prompt: str) -> dict:
         """Synchronous inference — called from a thread."""
         try:
+            # MolmoWeb expects "molmo_web_think: " prefix for web-agent mode
+            prefixed_prompt = f"molmo_web_think: {prompt}"
+
+            # Two-step: get formatted text template first (no tokenization),
+            # then call processor directly so the image is correctly embedded.
             messages = [
                 {
                     "role": "user",
                     "content": [
                         {"type": "image"},
-                        {"type": "text", "text": prompt},
+                        {"type": "text", "text": prefixed_prompt},
                     ],
                 }
             ]
 
-            text_input = self.processor.apply_chat_template(
-                messages, add_generation_prompt=True, tokenize=False
+            text = self.processor.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
             )
 
             inputs = self.processor(
+                text=text,
                 images=[screenshot],
-                text=text_input,
                 return_tensors="pt",
                 padding=True,
             )
+
+            # CRITICAL: Remove token_type_ids — MolmoWeb uses causal attention only.
+            # HF adds token_type_ids for bidirectional attention on image tokens,
+            # which corrupts generation and causes degenerate repetitive output.
+            inputs.pop("token_type_ids", None)
+
             inputs = {
                 k: v.to(self.device) if isinstance(v, torch.Tensor) else v
                 for k, v in inputs.items()
             }
 
+            input_len = inputs["input_ids"].shape[1]
+            print(f"[MolmoWeb] Input: {input_len} tokens, prompt: {prompt[:80]}...")
+
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
                     max_new_tokens=512,
-                    temperature=0.3,
-                    top_p=0.9,
                 )
 
-            response = self.processor.decode(outputs[0], skip_special_tokens=True)
-            print(f"[MolmoWeb] Raw response: {response[:200]}...")
-
-            # Strip the echoed prompt (MolmoWeb repeats the input)
-            if "<|assistant|>" in response:
-                response = response.split("<|assistant|>")[-1].strip()
+            # Only decode the NEW tokens (skip the echoed prompt)
+            new_tokens = outputs[0][input_len:]
+            response = self.processor.decode(new_tokens, skip_special_tokens=True).strip()
+            print(f"[MolmoWeb] Generated ({len(new_tokens)} tokens): {response[:300]}...")
 
             try:
                 json_match = re.search(r"\{.*\}", response, re.DOTALL)
