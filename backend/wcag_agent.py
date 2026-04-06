@@ -17,7 +17,34 @@ from typing import Optional
 from playwright.async_api import Page
 from PIL import Image
 import torch
-from transformers import AutoModelForImageTextToText, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor, LogitsProcessor, LogitsProcessorList
+
+
+class ConsecutiveNewlineSuppressor(LogitsProcessor):
+    """
+    Prevents the model from getting stuck in a newline loop.
+
+    Molmo2 image-token IDs exceed the LM vocabulary size, so the standard
+    `repetition_penalty` and `no_repeat_ngram_size` processors crash with a
+    CUDA scatter/gather index-out-of-bounds error.  This processor is safe
+    because it only ever writes to scores[:, NEWLINE_ID] — a known-good index.
+
+    After MAX_CONSECUTIVE consecutive newlines it hard-bans further newlines,
+    while still allowing the 1–2 newlines that appear inside valid JSON.
+    """
+    NEWLINE_ID = 198
+    MAX_CONSECUTIVE = 2
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        consecutive = 0
+        for tok in reversed(input_ids[0].tolist()):
+            if tok == self.NEWLINE_ID:
+                consecutive += 1
+            else:
+                break
+        if consecutive >= self.MAX_CONSECUTIVE:
+            scores[:, self.NEWLINE_ID] = -float("inf")
+        return scores
 
 
 class WCAGAgent:
@@ -181,8 +208,7 @@ class WCAGAgent:
                     do_sample=True,
                     temperature=0.7,
                     top_p=0.8,
-                    repetition_penalty=1.3,
-                    min_new_tokens=20,
+                    logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
                 )
 
             # Only decode the NEW tokens (skip the echoed prompt)
