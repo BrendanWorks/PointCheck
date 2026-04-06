@@ -157,7 +157,12 @@ class WCAGAgent:
             }
 
             input_len = inputs["input_ids"].shape[1]
-            print(f"[MolmoWeb] Input: {input_len} tokens, prompt: {prompt[:80]}...")
+            print(f"[Molmo2] Input keys: {list(inputs.keys())}")
+            for k, v in inputs.items():
+                shape = v.shape if isinstance(v, torch.Tensor) else type(v)
+                print(f"[Molmo2]   {k}: {shape}")
+            print(f"[Molmo2] token 198 decodes to: {repr(self.processor.decode([198]))}")
+            print(f"[Molmo2] Input: {input_len} tokens, prompt: {prompt[:80]}...")
 
             autocast_ctx = (
                 torch.autocast("cuda", dtype=torch.bfloat16)
