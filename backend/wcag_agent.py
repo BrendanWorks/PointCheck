@@ -136,18 +136,18 @@ class WCAGAgent:
     def _analyze_sync(self, screenshot: Image.Image, prompt: str) -> dict:
         """Synchronous inference — called from a thread."""
         try:
-            # One-step: pass image directly in messages so apply_chat_template
-            # inserts image tokens into input_ids. This correctly binds the image.
+            # Official Molmo2 API: text BEFORE image in content array.
             messages = [{"role": "user", "content": [
-                {"type": "image", "image": screenshot},
                 {"type": "text", "text": prompt},
+                {"type": "image", "image": screenshot},
             ]}]
             inputs = self.processor.apply_chat_template(
                 messages,
                 tokenize=True,
                 return_dict=True,
                 add_generation_prompt=True,
-                processor_kwargs={"padding": True, "return_tensors": "pt"},
+                return_tensors="pt",
+                padding=True,
             )
             inputs.pop("token_type_ids", None)
 
@@ -159,7 +159,12 @@ class WCAGAgent:
             input_len = inputs["input_ids"].shape[1]
             print(f"[MolmoWeb] Input: {input_len} tokens, prompt: {prompt[:80]}...")
 
-            with torch.no_grad():
+            autocast_ctx = (
+                torch.autocast("cuda", dtype=torch.bfloat16)
+                if self.device == "cuda"
+                else torch.no_grad()
+            )
+            with torch.inference_mode(), autocast_ctx:
                 outputs = self.model.generate(
                     **inputs,
                     max_new_tokens=512,
