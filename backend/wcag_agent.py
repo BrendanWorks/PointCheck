@@ -181,6 +181,8 @@ class WCAGAgent:
                     do_sample=True,
                     temperature=0.7,
                     top_p=0.8,
+                    repetition_penalty=1.3,
+                    min_new_tokens=20,
                 )
 
             # Only decode the NEW tokens (skip the echoed prompt)
