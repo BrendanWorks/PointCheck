@@ -418,7 +418,7 @@ function showResults(report) {
         <dl>
           ${r.failure_reason ? `<dt>Issue</dt><dd>${escapeHtml(r.failure_reason)}</dd>` : '<dt>Status</dt><dd>All checks passed.</dd>'}
           ${r.recommendation ? `<dt>Recommendation</dt><dd>${escapeHtml(r.recommendation)}</dd>` : ''}
-          ${r.screenshot_path ? `<dt>Screenshot</dt><dd><img src="/screenshots/${escapeHtml(r.screenshot_path.split('/screenshots/').pop() || '')}" alt="Screenshot of ${escapeHtml(r.test_name)} test result" loading="lazy"></dd>` : ''}
+          ${r.screenshot_b64 ? `<dt>Screenshot</dt><dd><img src="data:image/png;base64,${r.screenshot_b64}" alt="Screenshot of ${escapeHtml(r.test_name)} test result" loading="lazy"></dd>` : r.screenshot_path ? `<dt>Screenshot</dt><dd><img src="/screenshots/${escapeHtml(r.screenshot_path.split('/screenshots/').pop() || '')}" alt="Screenshot of ${escapeHtml(r.test_name)} test result" loading="lazy"></dd>` : ''}
         </dl>
       </div>`;
     item.querySelector('.result-item-header').addEventListener('click', () => {

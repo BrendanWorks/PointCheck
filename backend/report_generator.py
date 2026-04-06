@@ -73,6 +73,7 @@ def generate_report(run: dict) -> dict:
             "wcag_criteria": result.get("wcag_criteria", []) if result else [],
             "recommendation": result.get("recommendation", "") if result else "",
             "screenshot_path": result.get("screenshot_path") if result else None,
+            "screenshot_b64": result.get("screenshot_b64") if result else None,
         })
 
     overall_status = "compliant" if not failed else (
@@ -81,6 +82,7 @@ def generate_report(run: dict) -> dict:
 
     return {
         "run_id": run.get("run_id"),
+        "narrative": run.get("narrative", ""),
         "url": url,
         "generated_at": datetime.utcnow().isoformat(),
         "overall_status": overall_status,
