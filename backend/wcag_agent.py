@@ -114,7 +114,9 @@ class Molmo2Pointer:
             "device_map": "auto" if self.device == "cuda" else None,
             "trust_remote_code": True,
         }
-        if use_quantization and self.device == "cuda":
+        # Always quantize on CUDA — Molmo2 shares VRAM with OLMo2-7B (~14GB).
+        # 4-bit drops Molmo2 from ~8GB to ~2GB; pointing quality is unaffected.
+        if self.device == "cuda":
             from transformers import BitsAndBytesConfig
             model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -122,6 +124,7 @@ class Molmo2Pointer:
                 bnb_4bit_use_double_quant=True,
                 bnb_4bit_quant_type="nf4",
             )
+            model_kwargs.pop("dtype", None)  # incompatible with quantization_config
 
         self.model = AutoModelForImageTextToText.from_pretrained(model_name, **model_kwargs)
         if self.device == "cpu":
