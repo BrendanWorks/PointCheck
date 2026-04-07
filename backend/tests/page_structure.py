@@ -5,6 +5,7 @@ Maps to:
   1.3.1  Info and Relationships (heading hierarchy, landmarks)
   2.4.2  Page Titled           (descriptive page title)
   2.4.4  Link Purpose          (vague link text)
+  2.5.5  Touch Target Size     (minimum 24×24px interactive targets)
   3.1.1  Language of Page      (lang attribute on <html>)
   4.1.2  Name, Role, Value     (ARIA misuse, unlabelled interactive elements)
 
@@ -168,6 +169,36 @@ STRUCTURE_JS = """
         });
     }
 
+    // ── 2.5.5  Touch Target Size ────────────────────────────────────────
+    // WCAG 2.1 AAA: 44×44px minimum. WCAG 2.2 AA (2.5.8): 24×24px minimum.
+    // Flag anything under 24px — clear violation of both thresholds.
+    const MIN_TARGET_PX = 24;
+    const interactiveTargets = Array.from(document.querySelectorAll(
+        'a[href], button, input:not([type="hidden"]), select, textarea, [role="button"], [role="link"]'
+    )).filter(el => {
+        const tab = el.getAttribute('tabindex');
+        if (tab !== null && parseInt(tab) < 0) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+    });
+    const smallTargets = interactiveTargets.filter(el => {
+        const r = el.getBoundingClientRect();
+        return r.width < MIN_TARGET_PX || r.height < MIN_TARGET_PX;
+    }).map(el => {
+        const r = el.getBoundingClientRect();
+        const label = (el.innerText || el.getAttribute('aria-label') || el.getAttribute('value') || el.getAttribute('placeholder') || '').trim().slice(0, 40);
+        return `<${el.tagName.toLowerCase()}>${label ? ' "' + label + '"' : ''} (${Math.round(r.width)}×${Math.round(r.height)}px)`;
+    }).slice(0, 5);
+    if (smallTargets.length > 0) {
+        issues.push({
+            criterion: '2.5.5',
+            severity: 'minor',
+            description: `${smallTargets.length} interactive element(s) have touch targets smaller than 24×24px.`,
+            examples: smallTargets,
+            fix: 'Ensure all interactive elements have a minimum 24×24px clickable area (WCAG 2.2 AA). Use padding to grow the hit area without changing visual size.',
+        });
+    }
+
     // ── 4.1.2  Name, Role, Value (ARIA misuse) ─────────────────────────
     const ariaIssues = [];
 
@@ -226,6 +257,7 @@ CRITERION_LABEL = {
     "1.3.1": "Info and Relationships",
     "2.4.2": "Page Titled",
     "2.4.4": "Link Purpose",
+    "2.5.5": "Touch Target Size",
     "3.1.1": "Language of Page",
     "4.1.2": "Name, Role, Value",
 }
@@ -236,7 +268,7 @@ SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2}
 class PageStructureTest(BaseWCAGTest):
     TEST_ID = "page_structure"
     TEST_NAME = "Page Structure & Semantics"
-    WCAG_CRITERIA = ["1.1.1", "1.3.1", "2.4.2", "2.4.4", "3.1.1", "4.1.2"]
+    WCAG_CRITERIA = ["1.1.1", "1.3.1", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.2"]
     DEFAULT_SEVERITY = "major"
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:

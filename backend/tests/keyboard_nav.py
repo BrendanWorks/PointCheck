@@ -78,6 +78,23 @@ KEYBOARD_STATIC_JS = """
         });
     }
 
+    // 5. Positive tabindex values — override natural tab order (2.4.3)
+    const posTabEls = Array.from(document.querySelectorAll('[tabindex]')).filter(el => {
+        return parseInt(el.getAttribute('tabindex')) > 0;
+    });
+    if (posTabEls.length > 0) {
+        issues.push({
+            criterion: '2.4.3',
+            severity: 'major',
+            description: `${posTabEls.length} element(s) use positive tabindex values, which override the natural document tab order and disorient keyboard users.`,
+            examples: posTabEls.slice(0, 3).map(el => {
+                const tag = el.tagName.toLowerCase();
+                const label = (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 40);
+                return `<${tag} tabindex="${el.getAttribute('tabindex')}">${label ? ' "' + label + '"' : ''}`;
+            }),
+        });
+    }
+
     return issues;
 }
 """
