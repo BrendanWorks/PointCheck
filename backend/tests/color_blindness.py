@@ -29,37 +29,64 @@ CONTRAST_JS = """
         }, 0);
     }
     function parseRGB(color) {
-        const m = color.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
-        return m ? [+m[1], +m[2], +m[3]] : null;
+        const m = color.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?/);
+        if (!m) return null;
+        return { rgb: [+m[1], +m[2], +m[3]], alpha: m[4] !== undefined ? parseFloat(m[4]) : 1 };
     }
     function contrast(fg, bg) {
         const l1 = luminance(...fg), l2 = luminance(...bg);
         return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
     }
+    // Walk up the DOM to find the actual rendered background color,
+    // compositing alpha layers. Transparent elements inherit from parents.
+    function getEffectiveBg(el) {
+        let node = el;
+        let r = 255, g = 255, b = 255; // default white page bg
+        const stack = [];
+        while (node && node.tagName !== 'HTML') {
+            const p = parseRGB(window.getComputedStyle(node).backgroundColor);
+            if (p && p.alpha > 0.01) { stack.push(p); }
+            node = node.parentElement;
+        }
+        // Composite from bottom up
+        for (let i = stack.length - 1; i >= 0; i--) {
+            const { rgb, alpha } = stack[i];
+            r = Math.round(rgb[0] * alpha + r * (1 - alpha));
+            g = Math.round(rgb[1] * alpha + g * (1 - alpha));
+            b = Math.round(rgb[2] * alpha + b * (1 - alpha));
+        }
+        return [r, g, b];
+    }
 
     const els = Array.from(document.querySelectorAll(
-        'p, h1, h2, h3, h4, h5, h6, a, button, label, li, td, th, span'
+        'p, h1, h2, h3, h4, h5, h6, a, button, label, li, td, th, span, div'
     )).filter(el => {
         const r = el.getBoundingClientRect();
-        return r.width > 0 && r.height > 0 && (el.innerText || '').trim().length > 1;
-    }).slice(0, 40);
+        const text = (el.innerText || '').trim();
+        // Only leaf-ish nodes with actual visible text
+        return r.width > 0 && r.height > 0 && text.length > 1 && text.length < 200;
+    }).slice(0, 60);
 
     const failures = [], checked = [];
+    const seen = new Set();
     for (const el of els) {
         const s = window.getComputedStyle(el);
-        const fg = parseRGB(s.color);
-        const bg = parseRGB(s.backgroundColor);
-        if (!fg || !bg) continue;
-        // Skip transparent backgrounds (rgba(0,0,0,0))
-        if (s.backgroundColor.includes('rgba') && bg[0]===0 && bg[1]===0 && bg[2]===0) continue;
-
+        const fgParsed = parseRGB(s.color);
+        if (!fgParsed) continue;
+        const fg = fgParsed.rgb;
+        const bg = getEffectiveBg(el);
         const ratio = contrast(fg, bg);
         const size = parseFloat(s.fontSize);
         const weight = parseInt(s.fontWeight) || 400;
         const large = size >= 24 || (size >= 18.67 && weight >= 700);
         const threshold = large ? 3.0 : 4.5;
         const text = (el.innerText || '').trim().slice(0, 60);
-        const entry = { tag: el.tagName, text, ratio: Math.round(ratio*100)/100, threshold, passes: ratio >= threshold };
+        const key = text + fg.join(',') + bg.join(',');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const entry = { tag: el.tagName, text, ratio: Math.round(ratio*100)/100,
+                        threshold, passes: ratio >= threshold,
+                        fg: 'rgb('+fg+')', bg: 'rgb('+bg+')' };
         checked.push(entry);
         if (!entry.passes) failures.push(entry);
     }

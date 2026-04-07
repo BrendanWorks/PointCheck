@@ -13,6 +13,75 @@ from tests.base_test import BaseWCAGTest, TestResult
 
 MAX_TABS = 10
 
+# JS checks run once against the static DOM
+KEYBOARD_STATIC_JS = """
+() => {
+    const issues = [];
+
+    // 1. javascript: href links — keyboard Enter activates href, not the JS
+    //    but screen readers and some ATs won't follow them reliably.
+    //    More critically: links with ONLY onclick and href="#" / no href are mouse-traps.
+    const jsLinks = Array.from(document.querySelectorAll('a[href]')).filter(a => {
+        return a.getAttribute('href').trim().toLowerCase().startsWith('javascript:');
+    });
+    if (jsLinks.length > 0) {
+        issues.push({
+            criterion: '2.1.1',
+            severity: 'major',
+            description: `${jsLinks.length} link(s) use javascript: href — unreliable for keyboard/AT users.`,
+            examples: jsLinks.slice(0, 3).map(a => (a.innerText || a.href).trim().slice(0, 60)),
+        });
+    }
+
+    // 2. Clickable non-interactive elements with no keyboard role or tabindex
+    const mouseOnlyEls = Array.from(document.querySelectorAll('div,span,td,li')).filter(el => {
+        const hasClick = el.onclick || el.getAttribute('onclick');
+        const role = el.getAttribute('role') || '';
+        const tab = el.getAttribute('tabindex');
+        const interactive = ['button','link','menuitem','option','tab','checkbox','radio'].includes(role);
+        return hasClick && !interactive && tab === null;
+    });
+    if (mouseOnlyEls.length > 0) {
+        issues.push({
+            criterion: '2.1.1',
+            severity: 'major',
+            description: `${mouseOnlyEls.length} element(s) have click handlers but are not keyboard-reachable (no role + tabindex).`,
+            examples: mouseOnlyEls.slice(0, 3).map(el => (el.innerText || el.tagName).trim().slice(0, 60)),
+        });
+    }
+
+    // 3. onmouseover without onfocus equivalent (mouse-only hover interactions)
+    const hoverOnly = Array.from(document.querySelectorAll('[onmouseover]')).filter(el => {
+        return !el.getAttribute('onfocus') && !el.getAttribute('onmouseenter');
+    });
+    if (hoverOnly.length > 0) {
+        issues.push({
+            criterion: '2.1.1',
+            severity: 'minor',
+            description: `${hoverOnly.length} element(s) use onmouseover without an onfocus equivalent.`,
+            examples: hoverOnly.slice(0, 3).map(el => (el.innerText || el.tagName).trim().slice(0, 60)),
+        });
+    }
+
+    // 4. Missing skip navigation link (2.4.1)
+    const skipLinks = Array.from(document.querySelectorAll('a')).filter(a => {
+        const text = (a.innerText || '').toLowerCase();
+        const href = (a.getAttribute('href') || '');
+        return (text.includes('skip') || text.includes('jump')) && href.startsWith('#');
+    });
+    if (skipLinks.length === 0) {
+        issues.push({
+            criterion: '2.4.1',
+            severity: 'minor',
+            description: 'No skip navigation link found. Users must Tab through all repeated navigation on every page.',
+            examples: [],
+        });
+    }
+
+    return issues;
+}
+"""
+
 
 class KeyboardNavTest(BaseWCAGTest):
     TEST_ID = "keyboard_nav"
@@ -27,6 +96,13 @@ class KeyboardNavTest(BaseWCAGTest):
         stuck_count = 0
 
         yield self._progress("Starting keyboard navigation test...")
+
+        # ── Static DOM checks (JS-only links, mouse-only handlers, skip nav) ──
+        yield self._progress("Checking for JS-only links and mouse-only handlers...")
+        static_issues = await page.evaluate(KEYBOARD_STATIC_JS)
+        static_failures = [i for i in static_issues if i.get("severity") == "major"]
+        static_warnings = [i for i in static_issues if i.get("severity") == "minor"]
+
         await page.evaluate("document.activeElement && document.activeElement.blur()")
         await asyncio.sleep(0.3)
 
@@ -128,20 +204,74 @@ class KeyboardNavTest(BaseWCAGTest):
         summary_path = self.agent.save_screenshot(summary, self.run_dir, "keyboard_summary")
         summary_b64 = self.agent.image_to_base64(summary)
 
-        if failures:
-            worst = failures[0]
-            a = worst["analysis"]
+        all_failures = static_failures + failures
+        all_warnings = static_warnings
+
+        if all_failures:
+            # Prioritise tab-trap > JS-only links > focus indicator failures
+            if failures:
+                worst = failures[0]
+                a = worst["analysis"]
+                failure_reason = a.get("failure_reason", "")
+                wcag = a.get("wcag_criteria", self.WCAG_CRITERIA)
+                severity = a.get("severity", self.DEFAULT_SEVERITY)
+                sp = worst.get("screenshot_path") or summary_path
+                sb64 = worst.get("screenshot_b64") or summary_b64
+            else:
+                issue = static_failures[0]
+                failure_reason = issue["description"]
+                if issue.get("examples"):
+                    failure_reason += f" Examples: {'; '.join(issue['examples'][:2])}"
+                wcag = [issue["criterion"]]
+                severity = issue["severity"]
+                sp, sb64 = summary_path, summary_b64
+
+            # Append static issue summary to reason
+            if static_failures and failures:
+                extras = "; ".join(i["description"] for i in static_failures[:2])
+                failure_reason += f" Also: {extras}"
+
             result = TestResult(
                 test_id=self.TEST_ID,
                 test_name=self.TEST_NAME,
                 result="fail",
-                wcag_criteria=a.get("wcag_criteria", self.WCAG_CRITERIA),
-                severity=a.get("severity", self.DEFAULT_SEVERITY),
-                failure_reason=a.get("failure_reason", ""),
-                recommendation=a.get("recommendation", ""),
-                screenshot_path=worst.get("screenshot_path") or summary_path,
-                screenshot_b64=worst.get("screenshot_b64") or summary_b64,
-                details={"steps": steps, "failure_count": len(failures)},
+                wcag_criteria=wcag,
+                severity=severity,
+                failure_reason=failure_reason,
+                recommendation=(
+                    "Ensure all interactive elements are operable by keyboard alone. "
+                    "Replace javascript: hrefs with proper event handlers. "
+                    "Add tabindex + role to custom clickable elements. "
+                    "Add a skip navigation link as the first focusable element."
+                ),
+                screenshot_path=sp,
+                screenshot_b64=sb64,
+                details={
+                    "steps": steps,
+                    "focus_failures": len(failures),
+                    "static_failures": static_failures,
+                    "static_warnings": static_warnings,
+                },
+            )
+        elif all_warnings:
+            issue = all_warnings[0]
+            result = TestResult(
+                test_id=self.TEST_ID,
+                test_name=self.TEST_NAME,
+                result="warning",
+                wcag_criteria=["2.4.1"],
+                severity="minor",
+                failure_reason="; ".join(i["description"] for i in all_warnings),
+                recommendation=(
+                    "Add a visible 'Skip to main content' link as the first focusable element. "
+                    "Replace mouse-only hover interactions with keyboard-accessible equivalents."
+                ),
+                screenshot_path=summary_path,
+                screenshot_b64=summary_b64,
+                details={
+                    "steps": steps,
+                    "static_warnings": static_warnings,
+                },
             )
         else:
             result = TestResult(
