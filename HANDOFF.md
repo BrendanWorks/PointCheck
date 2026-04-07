@@ -202,6 +202,110 @@ git add <files> && git commit -m "message" && git push
 
 ---
 
+## Third-Party Site Testing History
+
+Multi-site validation was run against five external sites to confirm real catches, expose false positives/negatives, and drive bug fixes.
+
+---
+
+### 1. W3C WAI "BAD" Demo — https://www.w3.org/WAI/demos/bad/
+**Purpose:** W3C's official intentionally-broken accessibility demo. Has documented known failures — used as ground truth to verify the tool catches what it should.
+
+| Test | Result | Notes |
+|---|---|---|
+| Keyboard Navigation | FAIL ✓ | JS-only links detected |
+| Color/Contrast | FAIL ✓ | Initially a false negative — fixed |
+| Focus Indicator | WARNING ✓ | Molmo2 flagged visually insufficient focus rings |
+| Zoom/Reflow | FAIL ✓ | Text clipping caught |
+| Form Errors | FAIL ✓ | Missing labels detected |
+
+**Bugs found and fixed on this site:**
+- **Contrast false negative** — `getEffectiveBg()` was skipping `rgba(0,0,0,0)` transparent elements instead of walking up the DOM. Rewrote to composite alpha layers up the full tree. Now catches contrast failures on elements with inherited backgrounds.
+- **Keyboard false negative** — tab loop only checked focus traps, not JS-only links. Added `KEYBOARD_STATIC_JS` pre-scan: checks `javascript:` hrefs, `onclick` on non-interactive elements, `onmouseover` without `onfocus`, and missing skip nav.
+
+---
+
+### 2. GDS — UK Government Design System
+**Purpose:** High-quality accessible government site. Used to confirm true passes and catch any false positives on well-built accessible code.
+
+| Test | Result | Notes |
+|---|---|---|
+| Keyboard Navigation | PASS ✓ | JS links detected but overall accessible |
+| Color/Contrast | PASS ✓ | ~3.87:1 ratio met threshold |
+| Zoom/Reflow | FAIL ✓ | Text clipping correctly caught |
+| Focus Indicator | PASS ✓ | GDS has visible focus — correctly identified |
+| Form Errors | FAIL ✓ | Missing labels detected |
+
+**No bugs introduced. Good baseline for true-positive / true-negative balance.**
+
+---
+
+### 3. Mars Commuter
+**Purpose:** Modern web components site with complex interactive patterns (modals, dropdowns, dynamic content). Tests the tool against real-world JS-heavy UIs.
+
+| Test | Result | Notes |
+|---|---|---|
+| Keyboard Navigation | FAIL ✓ | JavaScript-only links detected |
+| Color/Contrast | FAIL ✓ | Contrast failures caught |
+| Zoom/Reflow | PASS ✓ | Correctly passed |
+| Focus Indicator | FAIL ✓ | iframe focus issues caught |
+| Form Errors | FAIL ✓ | 5 unlabeled fields detected |
+
+**No bugs introduced. Confirmed tool handles complex JS components correctly.**
+
+---
+
+### 4. Accessible University 3.0 (AU) — University of Washington
+**Purpose:** Before/after accessibility demo with intentional failures. Used to verify the tool catches real issues on a multi-page site.
+
+| Test | Result | Notes |
+|---|---|---|
+| Keyboard Navigation | FAIL ✓ | Issues detected |
+| Color/Contrast | FAIL ✓ | 2.52:1 ratio — well below 4.5:1 threshold |
+| Zoom/Reflow | PASS ✓ | Site reflows properly — correctly passed |
+| Focus Indicator | FAIL ✓ | No focus styles detected |
+| Form Errors | FAIL ✓ | 5 unlabeled form fields detected |
+
+**No bugs introduced. Good confirmation of multi-page site handling.**
+
+---
+
+### 5. Tenon UI — https://tenon-ui.info (via https://github.com/tenon-io)
+**Purpose:** Intentionally *accessible* React component library. Used specifically to hunt for false positives on well-built accessible code.
+
+| Test | Result | Notes |
+|---|---|---|
+| Keyboard Navigation | PASS ✓ | Correctly passed |
+| Color/Contrast | PASS ✓ | Correctly passed |
+| Zoom/Reflow | FALSE POSITIVE ✗ → fixed | Skip link flagged as clipped text |
+| Focus Indicator | PASS ✓ | Correctly passed (with skip link caveat) |
+| Form Errors | PASS ✓ | "No forms on page" correctly reported |
+
+**Bugs found and fixed on this site:**
+- **Zoom false positive on skip links** — "Skip to content" link is intentionally off-screen (`position:absolute; left:-9999px`) until focused. Tool was incorrectly flagging it as clipped text. Fixed by adding off-screen detection and skip link filter in the clipped element JS:
+  ```javascript
+  const offScreen = r.left < -200 || r.top < -200;
+  const isSkipLink = el.tagName === 'A' && href.startsWith('#') && offScreen;
+  return !offScreen && !tinyOrHidden && !isSkipLink && ...
+  ```
+- **Molmo2 "not found" warning on skip links** — Molmo2 correctly can't locate an off-screen element visually, but the warning message was confusing. Added skip link caveat to the warning text in `focus_indicator.py`.
+
+---
+
+### Testing Summary
+
+All five sites confirmed the tool catches real failures across all test categories. The two primary false negative fixes (contrast DOM walk, keyboard static scan) were both discovered on the W3C BAD site. The primary false positive fix (zoom skip links) was discovered on Tenon UI — the most adversarial test case for false positives.
+
+| Site | Purpose | Key Outcome |
+|---|---|---|
+| W3C BAD | Ground truth failures | Found + fixed 2 false negatives |
+| GDS | High-quality accessible site | Confirmed true-positive/true-negative balance |
+| Mars Commuter | JS-heavy modern UI | Confirmed complex component handling |
+| AU (U Washington) | Multi-page demo | Confirmed multi-page site handling |
+| Tenon UI | Intentionally accessible code | Found + fixed 1 false positive |
+
+---
+
 ## WCAG Coverage
 
 | Principle | Criteria Covered |
