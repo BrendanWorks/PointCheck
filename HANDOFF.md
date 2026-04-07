@@ -1,8 +1,7 @@
 # WCAG MolmoWeb Tester — Handoff Document
 
 ## What This Is
-A WCAG 2.1 Level AA accessibility testing tool powered by Allen AI's MolmoWeb-4B vision-language model. Users enter a URL, select tests, and get an accessibility audit. Built as a portfolio piece / calling card for an Allen AI job application.
-
+A WCAG 2.1 Level AA accessibility testing tool powered by Allen AI's MolmoWeb-4B vision-language model. Users enter a URL, select tests, and get an accessibility audit. 
 - **GitHub**: https://github.com/BrendanWorks/wcag-molmoweb-tester
 - **Live**: https://brendanworks--wcag-tester-web.modal.run
 - **Stack**: FastAPI + WebSocket + Playwright + MolmoWeb-4B on Modal (A10G GPU)
