@@ -2,12 +2,13 @@
 WCAG 2.1 Page Structure & Semantics — Fully Programmatic
 Maps to:
   1.1.1  Non-text Content      (alt text on images)
-  1.3.1  Info and Relationships (heading hierarchy, landmarks)
+  1.3.1  Info and Relationships (heading hierarchy, table headers, landmarks)
+  1.4.1  Use of Color          (inline links indistinguishable without color)
   2.4.2  Page Titled           (descriptive page title)
   2.4.4  Link Purpose          (vague link text)
   2.5.5  Touch Target Size     (minimum 24×24px interactive targets)
   3.1.1  Language of Page      (lang attribute on <html>)
-  4.1.2  Name, Role, Value     (ARIA misuse, unlabelled interactive elements)
+  4.1.2  Name, Role, Value     (ARIA misuse, unlabelled iframes, interactive elements)
 
 All checks run as a single JS evaluation — no VLM, no network, ~100ms.
 """
@@ -199,6 +200,96 @@ STRUCTURE_JS = """
         });
     }
 
+    // ── 1.3.1  Table Headers ────────────────────────────────────────────
+    // Data cells (<td>) in tables that have no associated header (<th> or scope)
+    const dataTables = Array.from(document.querySelectorAll('table')).filter(t => {
+        // Skip layout tables (no th, no caption, role=presentation/none)
+        const role = t.getAttribute('role') || '';
+        if (role === 'presentation' || role === 'none') return false;
+        return t.querySelector('th') !== null || t.querySelector('caption') !== null;
+    });
+    const tdsMissingHeader = [];
+    for (const table of dataTables) {
+        const rows = Array.from(table.querySelectorAll('tr'));
+        const hasColHeaders = table.querySelector('th') !== null;
+        if (!hasColHeaders) {
+            // All tds in this table lack headers
+            const tds = Array.from(table.querySelectorAll('td'));
+            tds.slice(0, 2).forEach(td =>
+                tdsMissingHeader.push((td.innerText || '').trim().slice(0, 40))
+            );
+        } else {
+            // Check for tds that are not covered by any th in their row or column
+            rows.forEach(row => {
+                const ths = row.querySelectorAll('th');
+                const tds = row.querySelectorAll('td');
+                if (ths.length === 0 && tds.length > 0) {
+                    // Row has only tds — check if a preceding row has th[scope=col]
+                    const table = row.closest('table');
+                    const hasColScope = table && table.querySelector('th[scope="col"]');
+                    if (!hasColScope) {
+                        tdsMissingHeader.push((tds[0].innerText || '').trim().slice(0, 40));
+                    }
+                }
+            });
+        }
+    }
+    if (tdsMissingHeader.length > 0) {
+        issues.push({
+            criterion: '1.3.1',
+            severity: 'major',
+            description: `Data table cell(s) have no associated header. Screen readers cannot convey the relationship between data and its label.`,
+            examples: [...new Set(tdsMissingHeader)].slice(0, 3),
+            fix: 'Add <th scope="col"> for column headers and <th scope="row"> for row headers. Use id/headers attributes for complex tables.',
+        });
+    }
+
+    // ── 4.1.2  iframe title ──────────────────────────────────────────────
+    const untitledFrames = Array.from(document.querySelectorAll('iframe, frame')).filter(f => {
+        const title = (f.getAttribute('title') || '').trim();
+        const ariaLabel = (f.getAttribute('aria-label') || '').trim();
+        const ariaLabelledby = f.getAttribute('aria-labelledby') || '';
+        return !title && !ariaLabel && !ariaLabelledby;
+    });
+    if (untitledFrames.length > 0) {
+        issues.push({
+            criterion: '4.1.2',
+            severity: 'major',
+            description: `${untitledFrames.length} iframe(s) have no title attribute. Screen reader users cannot identify the frame's purpose.`,
+            examples: untitledFrames.slice(0, 3).map(f =>
+                (f.getAttribute('src') || '<iframe>').split('/').pop().slice(0, 50)
+            ),
+            fix: 'Add a descriptive title attribute to every <iframe>, e.g. title="Payment form".',
+        });
+    }
+
+    // ── 1.4.1  Links in Text (color-only distinction) ───────────────────
+    // Inline links that share the same foreground color as surrounding text
+    // and have no underline, border, or other non-color visual cue.
+    const inlineLinks = Array.from(document.querySelectorAll('p a[href], li a[href], td a[href]'));
+    const colorOnlyLinks = inlineLinks.filter(a => {
+        const style = window.getComputedStyle(a);
+        const parentStyle = window.getComputedStyle(a.parentElement);
+        // Skip if underline is present (the most common non-color cue)
+        if (style.textDecorationLine && style.textDecorationLine !== 'none') return false;
+        // Skip if outline or border provides a visual cue
+        if (style.outline !== 'none' && style.outlineWidth !== '0px') return false;
+        if (style.borderBottom && style.borderBottomWidth !== '0px') return false;
+        // Flag if link color matches parent text color (no color distinction either)
+        const linkColor = style.color;
+        const parentColor = parentStyle.color;
+        return linkColor === parentColor;
+    });
+    if (colorOnlyLinks.length > 0) {
+        issues.push({
+            criterion: '1.4.1',
+            severity: 'major',
+            description: `${colorOnlyLinks.length} inline link(s) may be indistinguishable from surrounding text — no underline or non-color visual cue detected.`,
+            examples: colorOnlyLinks.slice(0, 3).map(a => (a.innerText || '').trim().slice(0, 50)),
+            fix: 'Ensure links within text are underlined, or use a non-color visual indicator (border, icon). Color alone is insufficient (WCAG 1.4.1).',
+        });
+    }
+
     // ── 4.1.2  Name, Role, Value (ARIA misuse) ─────────────────────────
     const ariaIssues = [];
 
@@ -255,6 +346,7 @@ STRUCTURE_JS = """
 CRITERION_LABEL = {
     "1.1.1": "Non-text Content",
     "1.3.1": "Info and Relationships",
+    "1.4.1": "Use of Color",
     "2.4.2": "Page Titled",
     "2.4.4": "Link Purpose",
     "2.5.5": "Touch Target Size",
@@ -268,7 +360,7 @@ SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2}
 class PageStructureTest(BaseWCAGTest):
     TEST_ID = "page_structure"
     TEST_NAME = "Page Structure & Semantics"
-    WCAG_CRITERIA = ["1.1.1", "1.3.1", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.2"]
+    WCAG_CRITERIA = ["1.1.1", "1.3.1", "1.4.1", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.2"]
     DEFAULT_SEVERITY = "major"
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
