@@ -17,7 +17,7 @@ The tool runs up to six accessibility tests against any public URL using a headl
 | Color-Blindness Simulation | 1.4.1 · 1.4.3 | Deuteranopia SVG filter + DOM-tree contrast walk |
 | Focus Visibility Check | 2.4.7 | CSS inspection + **Molmo2-4B visual confirmation** |
 | Form Error Handling | 3.3.1 · 3.3.2 · 3.3.3 | Form submission with invalid data |
-| Page Structure & Semantics | 1.1.1 · 1.3.1 · 2.4.2 · 2.4.4 · 2.5.5 · 3.1.1 · 4.1.2 | Single JS evaluation (~100 ms, no GPU) |
+| Page Structure & Semantics | 1.1.1 · 1.3.1 · 1.4.1 · 2.4.2 · 2.4.4 · 2.5.5 · 3.1.1 · 4.1.2 | Single JS evaluation (~100 ms, no GPU) |
 
 ---
 
@@ -53,6 +53,9 @@ Molmo2's output format is `<point x="42.3" y="67.1">`. If it cannot locate the f
 - **DOM-tree contrast walk** — `getEffectiveBg()` composites alpha layers up the DOM tree to find the actual rendered background, avoiding false passes on transparent elements
 - **Static JS keyboard scan** — before tab traversal, scans the DOM for `javascript:` hrefs, `onclick` on non-interactive elements, missing skip navigation, and **positive `tabindex` values** that override natural tab order (2.4.3)
 - **Touch target size** — flags interactive elements under 24×24px (WCAG 2.2 AA 2.5.8; WCAG 2.1 AAA 2.5.5 requires 44×44px)
+- **Table headers** — detects data table cells with no associated `<th>` or `scope` (1.3.1)
+- **iframe titles** — flags `<iframe>` elements missing `title` or `aria-label` (4.1.2)
+- **Color-only links** — detects inline links with no underline or non-color visual cue (1.4.1)
 - `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` — reduces CUDA memory fragmentation on the A10G
 
 ---
