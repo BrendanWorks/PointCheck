@@ -177,6 +177,8 @@ Push to `main` on GitHub — Vercel auto-deploys.
 - Root Directory: `frontend`
 - Framework: Next.js
 - Env var: `NEXT_PUBLIC_API_URL=https://brendanworks--wcag-tester-web.modal.run`
+- Custom domain: `pointcheck.org` — configured in Vercel → Settings → Domains
+  - DNS at cheapdomain.com: `A` record `@` → `76.76.21.21`, `CNAME` `www` → `cname.vercel-dns.com`
 
 ### Git
 ```bash

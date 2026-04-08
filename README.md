@@ -137,8 +137,16 @@ Push to `main`. Vercel auto-deploys from the `frontend/` root directory.
 Set the environment variable in your Vercel project:
 
 ```
-NEXT_PUBLIC_API_URL=https://<your-modal-endpoint>.modal.run
+NEXT_PUBLIC_API_URL=https://brendanworks--wcag-tester-web.modal.run
 ```
+
+**Custom domain (pointcheck.org):**
+1. In the [Vercel dashboard](https://vercel.com/dashboard) → your project → **Settings → Domains** → add `pointcheck.org` and `www.pointcheck.org`
+2. Vercel will show you DNS records to add — typically:
+   - `A` record: `@` → `76.76.21.21`
+   - `CNAME` record: `www` → `cname.vercel-dns.com`
+3. Add those records at cheapdomain.com under **DNS Management**
+4. Propagation takes a few minutes to a few hours
 
 ---
 
