@@ -12,8 +12,8 @@ export const TEST_OPTIONS: TestOption[] = [
   {
     id: "keyboard_nav",
     label: "Keyboard-Only Navigation",
-    description: "Tabs through interactive elements; checks every control is reachable and no keyboard traps exist.",
-    wcag: ["2.1.1", "2.1.2", "2.4.3"],
+    description: "Tabs through interactive elements; checks every control is reachable, no keyboard traps exist, and scrollable regions are keyboard accessible.",
+    wcag: ["2.1.1", "2.1.2", "2.4.1", "2.4.3"],
     phase: 1,
   },
   {
@@ -47,8 +47,8 @@ export const TEST_OPTIONS: TestOption[] = [
   {
     id: "page_structure",
     label: "Page Structure & Semantics",
-    description: "Checks alt text, headings, landmark regions, duplicate IDs, page title, link text, lang, touch targets, iframes, and ARIA misuse.",
-    wcag: ["1.1.1", "1.3.1", "1.4.1", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.1", "4.1.2"],
+    description: "Checks alt text, headings, landmark regions, duplicate IDs, blink/marquee elements, page title, link text, lang, touch targets, iframes, and ARIA misuse.",
+    wcag: ["1.1.1", "1.3.1", "1.4.1", "2.2.2", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.1", "4.1.2"],
     phase: 1,
   },
 ];

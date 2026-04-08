@@ -4,6 +4,7 @@ Maps to:
   1.1.1  Non-text Content      (alt text on images)
   1.3.1  Info and Relationships (heading hierarchy, landmark regions, table headers)
   1.4.1  Use of Color          (inline links indistinguishable without color)
+  2.2.2  Pause, Stop, Hide     (blink and marquee elements)
   2.4.2  Page Titled           (descriptive page title)
   2.4.4  Link Purpose          (vague link text)
   2.5.5  Touch Target Size     (minimum 24×24px interactive targets)
@@ -195,6 +196,25 @@ STRUCTURE_JS = """
             description: `${dupIds.length} duplicate ID value(s) found. Duplicate IDs break ARIA associations (aria-labelledby, aria-describedby) and <label for> bindings.`,
             examples: dupIds.slice(0, 5),
             fix: 'Every id attribute must be unique within the page. Use classes instead of IDs for repeated styling hooks.',
+        });
+    }
+
+    // ── 2.2.2  Pause, Stop, Hide (blink / marquee) ──────────────────────
+    const blinkEls   = Array.from(document.querySelectorAll('blink'));
+    const marqueeEls = Array.from(document.querySelectorAll('marquee'));
+    if (blinkEls.length > 0 || marqueeEls.length > 0) {
+        const parts = [];
+        if (blinkEls.length > 0)   parts.push(`${blinkEls.length} <blink> element(s)`);
+        if (marqueeEls.length > 0) parts.push(`${marqueeEls.length} <marquee> element(s)`);
+        issues.push({
+            criterion: '2.2.2',
+            severity: 'major',
+            description: `${parts.join(' and ')} found. These deprecated elements cause automatic movement that users cannot pause or stop.`,
+            examples: [
+                ...blinkEls.slice(0, 2).map(el => `<blink> "${(el.innerText || '').trim().slice(0, 40)}"`),
+                ...marqueeEls.slice(0, 2).map(el => `<marquee> "${(el.innerText || '').trim().slice(0, 40)}"`)
+            ].slice(0, 3),
+            fix: 'Remove <blink> and <marquee> entirely. If animation is needed, use CSS with a prefers-reduced-motion media query and provide a pause control.',
         });
     }
 
@@ -396,6 +416,7 @@ CRITERION_LABEL = {
     "1.1.1": "Non-text Content",
     "1.3.1": "Info and Relationships",
     "1.4.1": "Use of Color",
+    "2.2.2": "Pause, Stop, Hide",
     "2.4.2": "Page Titled",
     "2.4.4": "Link Purpose",
     "2.5.5": "Touch Target Size",
@@ -410,7 +431,7 @@ SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2}
 class PageStructureTest(BaseWCAGTest):
     TEST_ID = "page_structure"
     TEST_NAME = "Page Structure & Semantics"
-    WCAG_CRITERIA = ["1.1.1", "1.3.1", "1.4.1", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.1", "4.1.2"]
+    WCAG_CRITERIA = ["1.1.1", "1.3.1", "1.4.1", "2.2.2", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.1", "4.1.2"]
     DEFAULT_SEVERITY = "major"
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:

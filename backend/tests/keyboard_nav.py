@@ -1,6 +1,7 @@
 """
 WCAG 2.1 Keyboard Navigation Test — Fully Programmatic
-Maps to: 2.1.1 (Keyboard), 2.1.2 (No Keyboard Trap), 2.4.3 (Focus Order)
+Maps to: 2.1.1 (Keyboard), 2.1.2 (No Keyboard Trap), 2.4.1 (Bypass Blocks),
+         2.4.3 (Focus Order)
 
 Drives Tab through the page, inspects computed CSS for each focused element.
 No VLM — DOM is the sole authority for pass/fail.
@@ -78,7 +79,34 @@ KEYBOARD_STATIC_JS = """
         });
     }
 
-    // 5. Positive tabindex values — override natural tab order (2.4.3)
+    // 5. Scrollable regions not reachable by keyboard (2.1.1)
+    //    Mirrors Axe's scrollable-region-focusable rule.
+    const NATIVE_FOCUSABLE = new Set(['A','BUTTON','INPUT','SELECT','TEXTAREA']);
+    const scrollableNotFocusable = Array.from(document.querySelectorAll('*')).filter(el => {
+        if (el === document.body || el === document.documentElement) return false;
+        const s = window.getComputedStyle(el);
+        const ov = s.overflow + ' ' + s.overflowX + ' ' + s.overflowY;
+        if (!/auto|scroll/.test(ov)) return false;
+        // Must actually have overflowing content
+        const hasOverflow = el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2;
+        if (!hasOverflow) return false;
+        // Skip if naturally or explicitly focusable
+        const tab = el.getAttribute('tabindex');
+        return !NATIVE_FOCUSABLE.has(el.tagName) && (tab === null || parseInt(tab) < 0);
+    });
+    if (scrollableNotFocusable.length > 0) {
+        issues.push({
+            criterion: '2.1.1',
+            severity: 'major',
+            description: `${scrollableNotFocusable.length} scrollable region(s) are not keyboard accessible — keyboard users cannot scroll their content.`,
+            examples: scrollableNotFocusable.slice(0, 3).map(el => {
+                const label = (el.getAttribute('aria-label') || el.id || el.className || '').trim().slice(0, 40);
+                return `<${el.tagName.toLowerCase()}>${label ? ' "' + label + '"' : ''} (scroll: ${Math.round(el.scrollHeight)}px / visible: ${Math.round(el.clientHeight)}px)`;
+            }),
+        });
+    }
+
+    // 6. Positive tabindex values — override natural tab order (2.4.3)
     const posTabEls = Array.from(document.querySelectorAll('[tabindex]')).filter(el => {
         return parseInt(el.getAttribute('tabindex')) > 0;
     });
@@ -103,7 +131,7 @@ KEYBOARD_STATIC_JS = """
 class KeyboardNavTest(BaseWCAGTest):
     TEST_ID = "keyboard_nav"
     TEST_NAME = "Keyboard-Only Navigation"
-    WCAG_CRITERIA = ["2.1.1", "2.1.2", "2.4.3"]
+    WCAG_CRITERIA = ["2.1.1", "2.1.2", "2.4.1", "2.4.3"]
     DEFAULT_SEVERITY = "critical"
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
