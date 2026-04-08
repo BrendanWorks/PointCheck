@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" fill="none">
+  <!-- Top-left bracket -->
+  <path d="M 192,78 H 110 Q 78,78 78,110 V 192"
+        stroke="#CCFF00" stroke-width="36" stroke-linecap="square" fill="none"/>
+  <!-- Top-right bracket -->
+  <path d="M 288,78 H 370 Q 402,78 402,110 V 192"
+        stroke="#CCFF00" stroke-width="36" stroke-linecap="square" fill="none"/>
+  <!-- Bottom-left bracket -->
+  <path d="M 192,402 H 110 Q 78,402 78,370 V 288"
+        stroke="#CCFF00" stroke-width="36" stroke-linecap="square" fill="none"/>
+  <!-- Bottom-right bracket -->
+  <path d="M 288,402 H 370 Q 402,402 402,370 V 288"
+        stroke="#CCFF00" stroke-width="36" stroke-linecap="square" fill="none"/>
+  <!-- Checkmark -->
+  <path d="M 138,252 L 212,340 L 368,150"
+        stroke="#CCFF00" stroke-width="42" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- 4-pointed sparkle star (bottom-right) -->
+  <path d="M 440,424 L 443,435 L 454,438 L 443,441 L 440,452 L 437,441 L 426,438 L 437,435 Z"
+        fill="#6B7280"/>
+</svg>

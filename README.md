@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="frontend/public/logo-dark.svg" width="120" alt="PointCheck logo" />
+</p>
+
 # PointCheck
 
 An automated WCAG 2.1 Level AA accessibility testing tool powered by two Allen AI open-source models. Paste a URL, select tests, and get a detailed accessibility report in seconds — including a written narrative and Molmo2 visual confirmation of focus indicators.
