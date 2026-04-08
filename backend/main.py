@@ -30,7 +30,7 @@ from report_generator import generate_report
 
 # ── App setup ────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="WCAG 2.1 Level AA Testing Tool", version="1.0.0")
+app = FastAPI(title="PointCheck", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,

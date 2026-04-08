@@ -110,10 +110,10 @@ export default function AuditForm() {
       {phase === "form" && (
         <form onSubmit={handleSubmit} className="space-y-8">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Run Accessibility Audit</h2>
+            <h2 className="text-2xl font-bold text-slate-900">Run a PointCheck</h2>
             <p className="text-slate-500 mt-1 text-sm">
               Enter a URL and choose which WCAG 2.1 Level AA tests to run. Powered by
-              AllenAI&apos;s OLMo2 and Molmo2 models.
+              Allen AI&apos;s OLMo2 and Molmo2 models.
             </p>
           </div>
 

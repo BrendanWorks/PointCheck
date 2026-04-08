@@ -1,4 +1,4 @@
-# WCAG 2.1 Level AA Testing Tool — Setup
+# PointCheck — Setup
 
 ## Prerequisites
 - Python 3.10+

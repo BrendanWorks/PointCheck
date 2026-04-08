@@ -1,5 +1,5 @@
 """
-WCAG 2.1 Accessibility Tester — Modal Deployment
+PointCheck — Modal Deployment
 
 Two-model architecture:
   allenai/OLMo-2-1124-7B-Instruct  — executive summary narrative (text)

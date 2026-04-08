@@ -1,11 +1,11 @@
-# WCAG 2.1 Accessibility Tester — Handoff Document
+# PointCheck — Handoff Document
 **Last updated: 2026-04-07**
 
 ## What This Is
-A fully deployed WCAG 2.1 Level AA accessibility testing tool built as a portfolio piece for an Allen AI job application. Users paste a URL, select tests, and receive a detailed accessibility report with live streaming progress, Molmo2 visual confirmation, and an OLMo2-written executive summary.
+PointCheck is a fully deployed WCAG 2.1 Level AA accessibility testing tool built as a portfolio piece for an Allen AI job application. Users paste a URL, select tests, and receive a detailed accessibility report with live streaming progress, Molmo2 visual confirmation, and an OLMo2-written executive summary.
 
 - **GitHub**: https://github.com/BrendanWorks/wcag-molmoweb-tester
-- **Live frontend**: https://wcag-molmoweb-tester.vercel.app
+- **Live frontend**: https://pointcheck.org
 - **Backend endpoint**: https://brendanworks--wcag-tester-web.modal.run
 - **Stack**: Next.js 16 (Vercel) → FastAPI + WebSocket + Playwright + OLMo2-7B + Molmo2-4B (Modal A10G)
 
