@@ -161,7 +161,7 @@ The tool was validated against five external sites to confirm real catches, expo
 | Site | Purpose | Key Outcome |
 |---|---|---|
 | [W3C WAI "BAD" Demo](https://www.w3.org/WAI/demos/bad/) | W3C's official intentionally-broken accessibility demo — ground truth | Found + fixed 2 false negatives |
-| [UK Government Design System (GDS)](https://design-system.service.gov.uk) | High-quality accessible government site | Confirmed true-positive / true-negative balance |
+| [GDS Accessibility Tool Audit](https://alphagov.github.io/accessibility-tool-audit/test-cases.html) | GDS benchmark page containing every common failure — primary Lighthouse/Axe comparison | All 6 test dimensions fired correctly |
 | Mars Commuter | JS-heavy site with modals, dropdowns, dynamic content | Confirmed correct handling of complex components |
 | [Accessible University 3.0](https://www.washington.edu/accesscomputing/AU/) (U. Washington) | Before/after accessibility demo with intentional failures | Confirmed multi-page site handling |
 | [Tenon UI](https://tenon-ui.info) | Intentionally *accessible* React component library — adversarial false-positive test | Found + fixed 1 false positive |
@@ -172,7 +172,7 @@ The tool was validated against five external sites to confirm real catches, expo
 - **Contrast false negative** — `getEffectiveBg()` was skipping `rgba(0,0,0,0)` transparent elements. Rewrote to composite alpha layers up the full DOM tree, catching contrast failures on elements with inherited backgrounds.
 - **Keyboard false negative** — tab traversal alone missed JS-only links. Added `KEYBOARD_STATIC_JS` pre-scan for `javascript:` hrefs, `onclick` on non-interactive elements, `onmouseover` without `onfocus`, and missing skip navigation.
 
-**GDS** — no false positives on well-built accessible code. Zoom correctly flagged text clipping; focus, contrast, and keyboard all passed cleanly.
+**GDS Accessibility Tool Audit** — the UK Government Digital Service's benchmark page, built to contain every common failure. Lighthouse scored it 56/100 (19 failures); Axe found 22 violations. PointCheck failed all 6 test dimensions, confirming every test category fires correctly on a page designed to break all of them. The 5 dynamic test categories (zoom, color blindness, Molmo2 focus, keyboard behavior, form errors) all fired on real failures that neither Lighthouse nor Axe detected.
 
 **Mars Commuter** — keyboard JS links detected, contrast failures caught, 5 unlabeled form fields identified. Zoom correctly passed. Tool handled iframe focus issues correctly.
 

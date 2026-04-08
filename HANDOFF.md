@@ -230,18 +230,19 @@ Multi-site validation was run against five external sites to confirm real catche
 
 ---
 
-### 2. GDS — UK Government Design System
-**Purpose:** High-quality accessible government site. Used to confirm true passes and catch any false positives on well-built accessible code.
+### 2. GDS Accessibility Tool Audit — https://alphagov.github.io/accessibility-tool-audit/test-cases.html
+**Purpose:** The UK Government Digital Service's official benchmark page — built specifically to contain every common accessibility failure. Used as the primary three-way comparison against Lighthouse and Axe. Lighthouse score: 56/100 (19 failures). Axe: 22 violations.
 
 | Test | Result | Notes |
 |---|---|---|
-| Keyboard Navigation | PASS ✓ | JS links detected but overall accessible |
-| Color/Contrast | PASS ✓ | ~3.87:1 ratio met threshold |
-| Zoom/Reflow | FAIL ✓ | Text clipping correctly caught |
-| Focus Indicator | PASS ✓ | GDS has visible focus — correctly identified |
-| Form Errors | FAIL ✓ | Missing labels detected |
+| Page Structure | FAIL ✓ | Missing alt, table headers, duplicate IDs, touch targets, ARIA issues |
+| Keyboard Navigation | FAIL ✓ | `javascript:` href + positive tabindex detected |
+| Color/Contrast | FAIL ✓ | 3.87:1 contrast (needs 4.5:1) under deuteranopia simulation |
+| Zoom/Reflow | FAIL ✓ | Text clipping at 200% zoom |
+| Focus Indicator | WARNING ✓ | CSS outline present but Molmo2 could not visually confirm |
+| Form Errors | FAIL ✓ | 8 unlabeled fields detected |
 
-**No bugs introduced. Good baseline for true-positive / true-negative balance.**
+**All 6 tests failed — as expected on a page designed to fail everything. Confirmed PointCheck fires on every test dimension Lighthouse and Axe cannot reach.**
 
 ---
 
@@ -304,7 +305,7 @@ All five sites confirmed the tool catches real failures across all test categori
 | Site | Purpose | Key Outcome |
 |---|---|---|
 | W3C BAD | Ground truth failures | Found + fixed 2 false negatives |
-| GDS | High-quality accessible site | Confirmed true-positive/true-negative balance |
+| GDS Audit | Intentionally broken benchmark page | Confirmed all 6 test dimensions fire correctly |
 | Mars Commuter | JS-heavy modern UI | Confirmed complex component handling |
 | AU (U Washington) | Multi-page demo | Confirmed multi-page site handling |
 | Tenon UI | Intentionally accessible code | Found + fixed 1 false positive |
