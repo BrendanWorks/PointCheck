@@ -47,8 +47,8 @@ export const TEST_OPTIONS: TestOption[] = [
   {
     id: "page_structure",
     label: "Page Structure & Semantics",
-    description: "Checks alt text, headings, page title, link text, lang attribute, touch targets, iframes, and ARIA misuse.",
-    wcag: ["1.1.1", "1.3.1", "1.4.1", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.2"],
+    description: "Checks alt text, headings, landmark regions, duplicate IDs, page title, link text, lang, touch targets, iframes, and ARIA misuse.",
+    wcag: ["1.1.1", "1.3.1", "1.4.1", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.1", "4.1.2"],
     phase: 1,
   },
 ];

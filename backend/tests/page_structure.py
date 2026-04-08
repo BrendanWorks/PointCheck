@@ -2,12 +2,13 @@
 WCAG 2.1 Page Structure & Semantics — Fully Programmatic
 Maps to:
   1.1.1  Non-text Content      (alt text on images)
-  1.3.1  Info and Relationships (heading hierarchy, table headers, landmarks)
+  1.3.1  Info and Relationships (heading hierarchy, landmark regions, table headers)
   1.4.1  Use of Color          (inline links indistinguishable without color)
   2.4.2  Page Titled           (descriptive page title)
   2.4.4  Link Purpose          (vague link text)
   2.5.5  Touch Target Size     (minimum 24×24px interactive targets)
   3.1.1  Language of Page      (lang attribute on <html>)
+  4.1.1  Parsing               (duplicate IDs)
   4.1.2  Name, Role, Value     (ARIA misuse, unlabelled iframes, interactive elements)
 
 All checks run as a single JS evaluation — no VLM, no network, ~100ms.
@@ -146,6 +147,54 @@ STRUCTURE_JS = """
             description: `Heading levels skipped ${skips.length} time(s). Screen reader users rely on a logical heading outline.`,
             examples: skips.slice(0, 3),
             fix: 'Do not skip heading levels. Use h1→h2→h3 in order.',
+        });
+    }
+
+    // ── 1.3.1  Landmark Regions ─────────────────────────────────────────
+    const mainLandmarks = Array.from(document.querySelectorAll('main, [role="main"]'))
+        .filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 || r.height > 0; });
+    if (mainLandmarks.length === 0) {
+        issues.push({
+            criterion: '1.3.1',
+            severity: 'major',
+            description: 'No <main> landmark found. Screen reader users cannot skip directly to the main content.',
+            fix: 'Wrap the primary page content in a <main> element.',
+        });
+    } else if (mainLandmarks.length > 1) {
+        issues.push({
+            criterion: '1.3.1',
+            severity: 'major',
+            description: `${mainLandmarks.length} <main> landmarks found. A page should have exactly one <main>.`,
+            fix: 'Consolidate page content into a single <main> element.',
+        });
+    }
+    const navLandmarks = Array.from(document.querySelectorAll('nav, [role="navigation"]'));
+    const totalLinks = document.querySelectorAll('a[href]').length;
+    if (navLandmarks.length === 0 && totalLinks >= 5) {
+        issues.push({
+            criterion: '1.3.1',
+            severity: 'minor',
+            description: `No <nav> landmark found, but the page has ${totalLinks} links. Navigation groups should be labelled with <nav>.`,
+            fix: 'Wrap groups of navigation links in <nav> elements so screen reader users can find and skip them.',
+        });
+    }
+
+    // ── 4.1.1  Duplicate IDs ────────────────────────────────────────────
+    const idCounts = {};
+    Array.from(document.querySelectorAll('[id]')).forEach(el => {
+        const id = el.id.trim();
+        if (id) idCounts[id] = (idCounts[id] || 0) + 1;
+    });
+    const dupIds = Object.entries(idCounts)
+        .filter(([, count]) => count > 1)
+        .map(([id]) => id);
+    if (dupIds.length > 0) {
+        issues.push({
+            criterion: '4.1.1',
+            severity: 'major',
+            description: `${dupIds.length} duplicate ID value(s) found. Duplicate IDs break ARIA associations (aria-labelledby, aria-describedby) and <label for> bindings.`,
+            examples: dupIds.slice(0, 5),
+            fix: 'Every id attribute must be unique within the page. Use classes instead of IDs for repeated styling hooks.',
         });
     }
 
@@ -351,6 +400,7 @@ CRITERION_LABEL = {
     "2.4.4": "Link Purpose",
     "2.5.5": "Touch Target Size",
     "3.1.1": "Language of Page",
+    "4.1.1": "Parsing",
     "4.1.2": "Name, Role, Value",
 }
 
@@ -360,7 +410,7 @@ SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2}
 class PageStructureTest(BaseWCAGTest):
     TEST_ID = "page_structure"
     TEST_NAME = "Page Structure & Semantics"
-    WCAG_CRITERIA = ["1.1.1", "1.3.1", "1.4.1", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.2"]
+    WCAG_CRITERIA = ["1.1.1", "1.3.1", "1.4.1", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.1", "4.1.2"]
     DEFAULT_SEVERITY = "major"
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
