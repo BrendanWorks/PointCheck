@@ -56,32 +56,13 @@ export default function RootLayout({
               </span>
             </div>
           </a>
-          <nav className="flex items-center gap-5 text-sm" style={{ color: "var(--muted)" }}>
-            <a
-              href="/about"
-              className="transition-colors hover:text-current"
-              style={{ color: "var(--muted)" }}
-              onMouseEnter={(e) =>
-                ((e.target as HTMLElement).style.color = "var(--text)")
-              }
-              onMouseLeave={(e) =>
-                ((e.target as HTMLElement).style.color = "var(--muted)")
-              }
-            >
-              About
-            </a>
+          <nav className="flex items-center gap-5 text-sm">
+            <a href="/about" className="nav-link-muted">About</a>
             <a
               href="https://github.com/BrendanWorks/wcag-molmoweb-tester"
               target="_blank"
               rel="noopener noreferrer"
-              className="transition-colors"
-              style={{ color: "var(--muted)" }}
-              onMouseEnter={(e) =>
-                ((e.target as HTMLElement).style.color = "var(--lime)")
-              }
-              onMouseLeave={(e) =>
-                ((e.target as HTMLElement).style.color = "var(--muted)")
-              }
+              className="nav-link-lime"
             >
               GitHub
             </a>
@@ -113,25 +94,20 @@ export default function RootLayout({
               </p>
             </div>
             <nav className="flex flex-wrap gap-x-5 gap-y-1">
-              <a href="/about" style={{ color: "var(--muted)" }}
-                className="transition-colors hover:text-white">About</a>
-              <a href="/privacy" style={{ color: "var(--muted)" }}
-                className="transition-colors hover:text-white">Privacy</a>
-              <a href="/terms" style={{ color: "var(--muted)" }}
-                className="transition-colors hover:text-white">Terms</a>
+              <a href="/about" className="footer-link">About</a>
+              <a href="/privacy" className="footer-link">Privacy</a>
+              <a href="/terms" className="footer-link">Terms</a>
               <a
                 href="https://github.com/BrendanWorks/wcag-molmoweb-tester"
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ color: "var(--muted)" }}
-                className="transition-colors hover:text-white"
+                className="footer-link"
               >
                 GitHub
               </a>
               <a
                 href="mailto:brendanworks@gmail.com"
-                style={{ color: "var(--muted)" }}
-                className="transition-colors hover:text-white"
+                className="footer-link"
               >
                 Contact
               </a>

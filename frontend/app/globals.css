@@ -12,6 +12,14 @@
   --muted:   #7A7A82;
 }
 
+/* Nav hover helpers (used in Server Component layout — can't use inline handlers) */
+.nav-link-muted { color: var(--muted); transition: color 0.15s; }
+.nav-link-muted:hover { color: var(--text); }
+.nav-link-lime  { color: var(--muted); transition: color 0.15s; }
+.nav-link-lime:hover  { color: var(--lime); }
+.footer-link { color: var(--muted); transition: color 0.15s; }
+.footer-link:hover { color: var(--text); }
+
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--text);
