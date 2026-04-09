@@ -25,7 +25,9 @@ from typing import AsyncGenerator, Optional
 from tests.base_test import BaseWCAGTest, TestResult
 
 MAX_TABS = 15
-POINT_TOLERANCE = 40  # px — how far Molmo2's point can be from the element rect
+MAX_MOLMO_CALLS = 5    # cap Molmo2 invocations per run — each takes ~30-50s on GPU
+MOLMO_TIMEOUT  = 45.0  # seconds — hard per-call timeout; avoids 12+ min hangs
+POINT_TOLERANCE = 40   # px — how far Molmo2's point can be from the element rect
 
 
 def _point_in_rect(px: float, py: float, rect: dict, tol: int = POINT_TOLERANCE) -> bool:
@@ -46,6 +48,7 @@ class FocusIndicatorTest(BaseWCAGTest):
         failures = []
         warnings = []
         steps = []
+        molmo_calls = 0  # track invocations against MAX_MOLMO_CALLS
 
         using_molmo = self.pointer is not None
         yield self._progress(
@@ -130,15 +133,26 @@ class FocusIndicatorTest(BaseWCAGTest):
                     "screenshot_b64": screenshot_b64,
                 })
 
-            elif using_molmo:
+            elif using_molmo and molmo_calls < MAX_MOLMO_CALLS:
                 # ── CSS PASS → ask Molmo2 to visually confirm ────────────────
+                molmo_calls += 1
                 yield self._progress(
-                    f"CSS outline found on {el_desc} — asking Molmo2 to visually confirm..."
+                    f"CSS outline found on {el_desc} — asking Molmo2 to visually confirm "
+                    f"({molmo_calls}/{MAX_MOLMO_CALLS})..."
                 )
-                point = await self.pointer.point_to(
-                    screenshot,
-                    "the element that currently has keyboard focus"
-                )
+                try:
+                    point = await asyncio.wait_for(
+                        self.pointer.point_to(
+                            screenshot,
+                            "the element that currently has keyboard focus"
+                        ),
+                        timeout=MOLMO_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    yield self._progress(
+                        f"Molmo2 timed out on tab {tab_num} — skipping visual check."
+                    )
+                    point = None
 
                 if point is None:
                     # Molmo2 could not locate the focused element
