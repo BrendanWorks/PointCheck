@@ -132,10 +132,14 @@ export default function AuditForm() {
     e.preventDefault();
     e.stopPropagation();
 
-    const urlValue = url.trim();
+    let urlValue = url.trim();
     if (!urlValue || selectedTests.length === 0) {
       setError(urlValue ? "Please select at least one test." : "Please enter a URL.");
       return;
+    }
+    // Auto-prepend https:// if the user omitted the protocol
+    if (!/^https?:\/\//i.test(urlValue)) {
+      urlValue = `https://${urlValue}`;
     }
 
     const settings = { task, selectedTests, useQuantization };

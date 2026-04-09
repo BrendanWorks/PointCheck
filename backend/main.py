@@ -97,6 +97,10 @@ async def health():
 
 @app.post("/api/run", response_model=StartTestResponse)
 async def start_run(req: StartTestRequest):
+    # Normalize URL — prepend https:// if protocol is missing
+    if not req.url.startswith(("http://", "https://")):
+        req.url = f"https://{req.url}"
+
     unknown = [t for t in req.tests if t not in TEST_MAP]
     if unknown:
         raise HTTPException(400, f"Unknown test(s): {unknown}. Valid: {list(TEST_MAP)}")
