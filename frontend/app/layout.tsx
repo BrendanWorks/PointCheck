@@ -1,20 +1,22 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
+import { WcagVersionProvider } from "@/components/WcagVersionProvider";
+import HeaderVersion from "@/components/HeaderVersion";
 
 export const metadata: Metadata = {
-  title: "PointCheck — WCAG 2.1 Accessibility Tester",
+  title: "PointCheck — WCAG 2.1 & 2.2 Accessibility Tester",
   description:
-    "WCAG 2.1 Level AA accessibility testing powered by Allen AI's Molmo2 vision-language model. Catches failures that Axe and Lighthouse miss.",
+    "WCAG 2.1 & 2.2 Level AA accessibility testing powered by Allen AI's Molmo2 vision-language model. Catches failures that Axe and Lighthouse miss.",
   icons: {
     icon: "/logo.svg",
     shortcut: "/logo.svg",
     apple: "/logo.svg",
   },
   openGraph: {
-    title: "PointCheck — WCAG 2.1 Accessibility Tester",
+    title: "PointCheck — WCAG 2.1 & 2.2 Accessibility Tester",
     description:
-      "WCAG 2.1 Level AA accessibility testing powered by Allen AI's Molmo2 vision-language model. Catches failures that Axe and Lighthouse miss.",
+      "WCAG 2.1 & 2.2 Level AA accessibility testing powered by Allen AI's Molmo2 vision-language model. Catches failures that Axe and Lighthouse miss.",
     url: "https://pointcheck.org",
     type: "website",
     siteName: "PointCheck",
@@ -43,6 +45,7 @@ export default function RootLayout({
         className="min-h-full flex flex-col antialiased"
         style={{ background: "var(--bg)", color: "var(--text)" }}
       >
+        <WcagVersionProvider>
         {/* ── Header ── */}
         <header
           className="px-6 py-4 flex items-center justify-between"
@@ -62,9 +65,7 @@ export default function RootLayout({
               >
                 PointCheck
               </span>
-              <span className="text-xs mt-0.5 block" style={{ color: "var(--muted)" }}>
-                WCAG 2.1 Level AA — Powered by OLMo3 &amp; Molmo2
-              </span>
+              <HeaderVersion />
             </div>
           </a>
           <nav className="flex items-center gap-5 text-sm">
@@ -103,8 +104,8 @@ export default function RootLayout({
                   Allen AI OLMo3 and Molmo2
                 </a>
               </p>
-              <p style={{ opacity: 0.6 }}>
-                Automated + AI-assisted. A full manual audit is still recommended for complete WCAG coverage.
+              <p style={{ opacity: 0.75 }}>
+                Free while in beta &middot; Built in Seattle &middot; Not a replacement for manual audits
               </p>
             </div>
             <nav className="flex flex-wrap gap-x-5 gap-y-1">
@@ -128,6 +129,7 @@ export default function RootLayout({
             </nav>
           </div>
         </footer>
+        </WcagVersionProvider>
       </body>
     </html>
   );

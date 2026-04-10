@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import TestSelector, { TEST_OPTIONS } from "@/components/TestSelector";
 import ProgressDisplay from "@/components/ProgressDisplay";
 import ResultsDashboard from "@/components/ResultsDashboard";
+import { useWcagVersion } from "@/components/WcagVersionProvider";
 
 type Phase = "form" | "running" | "done";
 
@@ -17,7 +18,7 @@ export default function AuditForm() {
     TEST_OPTIONS.map((t) => t.id)
   );
   const [useQuantization, setUseQuantization] = useState(false);
-  const [wcagVersion, setWcagVersion] = useState<"2.1" | "2.2">("2.2");
+  const { version: wcagVersion, setVersion: setWcagVersion } = useWcagVersion();
   const [phase, setPhase] = useState<Phase>("form");
   const [events, setEvents] = useState<object[]>([]);
   const [report, setReport] = useState<Record<string, unknown> | null>(null);
