@@ -30,7 +30,7 @@ KEYBOARD_STATIC_JS = """
             criterion: '2.1.1',
             severity: 'major',
             description: `${jsLinks.length} link(s) use javascript: href — unreliable for keyboard/AT users.`,
-            examples: jsLinks.slice(0, 3).map(a => (a.innerText || a.href).trim().slice(0, 60)),
+            examples: jsLinks.slice(0, 3).map(a => (a.innerText || a.href).trim().slice(0, 120)),
         });
     }
 
@@ -47,7 +47,7 @@ KEYBOARD_STATIC_JS = """
             criterion: '2.1.1',
             severity: 'major',
             description: `${mouseOnlyEls.length} element(s) have click handlers but are not keyboard-reachable (no role + tabindex).`,
-            examples: mouseOnlyEls.slice(0, 3).map(el => (el.innerText || el.tagName).trim().slice(0, 60)),
+            examples: mouseOnlyEls.slice(0, 3).map(el => (el.innerText || el.tagName).trim().slice(0, 120)),
         });
     }
 
@@ -60,7 +60,7 @@ KEYBOARD_STATIC_JS = """
             criterion: '2.1.1',
             severity: 'minor',
             description: `${hoverOnly.length} element(s) use onmouseover without an onfocus equivalent.`,
-            examples: hoverOnly.slice(0, 3).map(el => (el.innerText || el.tagName).trim().slice(0, 60)),
+            examples: hoverOnly.slice(0, 3).map(el => (el.innerText || el.tagName).trim().slice(0, 120)),
         });
     }
 

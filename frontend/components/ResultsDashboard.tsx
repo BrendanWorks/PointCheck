@@ -72,6 +72,7 @@ interface Report {
   run_id: string;
   url: string;
   generated_at: string;
+  wcag_version?: string;
   overall_status: string;
   compliance_percentage: number;
   narrative?: string;
@@ -168,12 +169,20 @@ export default function ResultsDashboard({
       <div style={card} className="p-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <span
-              className="text-xs font-semibold px-2.5 py-1 rounded-full inline-block mb-2"
-              style={{ color: status.color, background: status.bg }}
-            >
-              {status.label}
-            </span>
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                style={{ color: status.color, background: status.bg }}
+              >
+                {status.label}
+              </span>
+              <span
+                className="text-xs font-mono px-2 py-1 rounded-full"
+                style={{ color: "var(--muted)", background: "var(--surface2)", border: "1px solid var(--border)" }}
+              >
+                WCAG {r.wcag_version ?? "2.2"} AA
+              </span>
+            </div>
             <h2 className="text-lg font-bold break-all" style={{ color: "var(--text)" }}>{url}</h2>
             <p className="text-xs mt-1 font-mono" style={{ color: "var(--muted)" }}>
               {r.run_id} · {new Date(r.generated_at).toLocaleString()}

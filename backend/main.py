@@ -73,6 +73,7 @@ class StartTestRequest(BaseModel):
     tests: list[str]
     task: str = "Navigate and use the main features of this website"
     use_quantization: bool = False
+    wcag_version: str = "2.2"  # "2.1" or "2.2"
 
 
 class StartTestResponse(BaseModel):
@@ -115,6 +116,7 @@ async def start_run(req: StartTestRequest):
         "results": [],
         "created_at": datetime.utcnow().isoformat(),
         "use_quantization": req.use_quantization,
+        "wcag_version": req.wcag_version if req.wcag_version in ("2.1", "2.2") else "2.2",
     }
     return StartTestResponse(run_id=run_id, message="Run queued. Connect via WebSocket to start.")
 
@@ -216,6 +218,7 @@ async def websocket_run(ws: WebSocket, run_id: str):
                     agent=_agent,
                     run_dir=run_dir,
                     pointer=_pointer if test_id == "focus_indicator" else None,
+                    wcag_version=run.get("wcag_version", "2.2"),
                 )
 
                 await send({

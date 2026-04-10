@@ -95,9 +95,15 @@ class ZoomTest(BaseWCAGTest):
             failures.append(f"Text clipped at 200% zoom: {els}")
 
         if failures:
+            if has_scroll and clipped:
+                fail_name = "Resize Text & Reflow"
+            elif has_scroll:
+                fail_name = "Reflow (1.4.10)"
+            else:
+                fail_name = "Resize Text (1.4.4)"
             result = TestResult(
                 test_id=self.TEST_ID,
-                test_name=self.TEST_NAME,
+                test_name=fail_name,
                 result="fail",
                 wcag_criteria=["1.4.10"] if has_scroll else ["1.4.4"],
                 severity="major",

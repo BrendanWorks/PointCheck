@@ -97,6 +97,7 @@ def generate_report(run: dict) -> dict:
         "narrative": run.get("narrative", ""),
         "url": url,
         "generated_at": datetime.utcnow().isoformat(),
+        "wcag_version": run.get("wcag_version", "2.2"),
         "overall_status": overall_status,
         "compliance_percentage": compliance_pct,
         "summary": {

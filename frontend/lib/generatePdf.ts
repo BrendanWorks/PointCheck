@@ -41,6 +41,7 @@ interface Report {
   run_id: string;
   url: string;
   generated_at: string;
+  wcag_version?: string;
   overall_status: string;
   compliance_percentage: number;
   narrative?: string;
@@ -99,6 +100,7 @@ function sanitize(text: string): string {
 
 export function generatePdf(report: Record<string, unknown>): void {
   const r = report as unknown as Report;
+  const wcagLabel = `WCAG ${r.wcag_version ?? "2.2"} Level AA`;
   const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
 
   let y = 0;
@@ -179,7 +181,7 @@ export function generatePdf(report: Record<string, unknown>): void {
   doc.setFontSize(8.5);
   doc.setFont("helvetica", "normal");
   textC(MUTED);
-  doc.text("WCAG 2.1 Level AA Accessibility Report", ML + 5, 21);
+  doc.text(`${wcagLabel} Accessibility Report`, ML + 5, 21);
 
   const urlDisplay = sanitize(
     (r.url?.length ?? 0) > 68 ? r.url.slice(0, 65) + "..." : (r.url ?? "")
@@ -497,7 +499,7 @@ export function generatePdf(report: Record<string, unknown>): void {
     doc.setFont("helvetica", "normal");
     textC(MUTED);
     doc.text("pointcheck.org", ML, PH - 3);
-    doc.text("WCAG 2.1 Level AA", PW / 2, PH - 3, { align: "center" });
+    doc.text(wcagLabel, PW / 2, PH - 3, { align: "center" });
     doc.text(`${p} / ${totalPages}`, PW - MR, PH - 3, { align: "right" });
   }
 

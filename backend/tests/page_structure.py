@@ -439,6 +439,10 @@ class PageStructureTest(BaseWCAGTest):
 
         issues = await page.evaluate(STRUCTURE_JS)
 
+        # 2.5.8 is WCAG 2.2 AA only — omit it when testing against 2.1
+        if self.wcag_version == "2.1":
+            issues = [i for i in issues if i.get("criterion") != "2.5.8"]
+
         screenshot = await self.agent.screenshot_to_image(page)
         screenshot_path = self.agent.save_screenshot(screenshot, self.run_dir, "page_structure")
         screenshot_b64 = self.agent.image_to_base64(screenshot)

@@ -17,6 +17,7 @@ export default function AuditForm() {
     TEST_OPTIONS.map((t) => t.id)
   );
   const [useQuantization, setUseQuantization] = useState(false);
+  const [wcagVersion, setWcagVersion] = useState<"2.1" | "2.2">("2.2");
   const [phase, setPhase] = useState<Phase>("form");
   const [events, setEvents] = useState<object[]>([]);
   const [report, setReport] = useState<Record<string, unknown> | null>(null);
@@ -27,7 +28,7 @@ export default function AuditForm() {
   const wsRef = useRef<WebSocket | null>(null);
   const coldStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Keep a snapshot of settings for retry
-  const lastSettingsRef = useRef({ task, selectedTests, useQuantization });
+  const lastSettingsRef = useRef({ task, selectedTests, useQuantization, wcagVersion });
   // Collect screenshot_b64 from streaming result events (stripped from done report to save WS payload)
   const screenshotMapRef = useRef<Record<string, string>>({});
 
@@ -43,6 +44,7 @@ export default function AuditForm() {
     task: string;
     selectedTests: string[];
     useQuantization: boolean;
+    wcagVersion: "2.1" | "2.2";
   }) {
     wsRef.current?.close();
     if (coldStartTimerRef.current) clearTimeout(coldStartTimerRef.current);
@@ -75,6 +77,7 @@ export default function AuditForm() {
           tests: settings.selectedTests,
           task: settings.task.trim() || "Navigate and use the main features of this website",
           use_quantization: settings.useQuantization,
+          wcag_version: settings.wcagVersion,
         }),
       });
 
@@ -165,7 +168,7 @@ export default function AuditForm() {
       urlValue = `https://${urlValue}`;
     }
 
-    const settings = { task, selectedTests, useQuantization };
+    const settings = { task, selectedTests, useQuantization, wcagVersion };
     lastSettingsRef.current = settings;
     runAudit(urlValue, settings);
   }
@@ -200,14 +203,39 @@ export default function AuditForm() {
       {/* ── Form ── */}
       {phase === "form" && (
         <form onSubmit={handleSubmit} className="space-y-8">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text)" }}>
-              Run a PointCheck
-            </h2>
-            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
-              Enter a URL and choose which WCAG 2.1 Level AA tests to run. Powered by
-              Allen AI&apos;s OLMo3 and Molmo2 models.
-            </p>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text)" }}>
+                Run a PointCheck
+              </h2>
+              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+                Enter a URL and choose which WCAG {wcagVersion} Level AA tests to run. Powered by
+                Allen AI&apos;s OLMo3 and Molmo2 models.
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-xs font-medium" style={{ color: "var(--muted)" }}>WCAG Version</span>
+              <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                {(["2.1", "2.2"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setWcagVersion(v)}
+                    className="px-3 py-1.5 text-xs font-semibold transition-colors"
+                    style={
+                      wcagVersion === v
+                        ? { background: "var(--lime)", color: "#0A0A0B" }
+                        : { background: "var(--surface2)", color: "var(--muted)" }
+                    }
+                  >
+                    {v} AA
+                  </button>
+                ))}
+              </div>
+              {wcagVersion === "2.2" && (
+                <span className="text-xs" style={{ color: "var(--muted)" }}>Current standard</span>
+              )}
+            </div>
           </div>
 
           {error && (
