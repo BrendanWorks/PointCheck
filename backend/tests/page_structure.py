@@ -239,9 +239,9 @@ STRUCTURE_JS = """
         });
     }
 
-    // ── 2.5.5  Touch Target Size ────────────────────────────────────────
-    // WCAG 2.1 AAA: 44×44px minimum. WCAG 2.2 AA (2.5.8): 24×24px minimum.
-    // Flag anything under 24px — clear violation of both thresholds.
+    // ── 2.5.8  Touch Target Size (WCAG 2.2 AA) ─────────────────────────
+    // 2.5.5 is WCAG 2.1 AAA (44×44px). We test to the 2.2 AA threshold
+    // instead: 2.5.8 requires 24×24px minimum (or adequate spacing).
     const MIN_TARGET_PX = 24;
     const interactiveTargets = Array.from(document.querySelectorAll(
         'a[href], button, input:not([type="hidden"]), select, textarea, [role="button"], [role="link"]'
@@ -261,11 +261,11 @@ STRUCTURE_JS = """
     }).slice(0, 5);
     if (smallTargets.length > 0) {
         issues.push({
-            criterion: '2.5.5',
+            criterion: '2.5.8',
             severity: 'minor',
-            description: `${smallTargets.length} interactive element(s) have touch targets smaller than 24×24px.`,
+            description: `${smallTargets.length} interactive element(s) have touch targets smaller than 24×24px (WCAG 2.2 AA, criterion 2.5.8).`,
             examples: smallTargets,
-            fix: 'Ensure all interactive elements have a minimum 24×24px clickable area (WCAG 2.2 AA). Use padding to grow the hit area without changing visual size.',
+            fix: 'Ensure all interactive elements have a minimum 24×24px clickable area. Use padding to grow the hit area without changing visual size.',
         });
     }
 
@@ -419,7 +419,7 @@ CRITERION_LABEL = {
     "2.2.2": "Pause, Stop, Hide",
     "2.4.2": "Page Titled",
     "2.4.4": "Link Purpose",
-    "2.5.5": "Touch Target Size",
+    "2.5.8": "Target Size (Minimum)",  # WCAG 2.2 AA — replaces 2.5.5 (which is 2.1 AAA)
     "3.1.1": "Language of Page",
     "4.1.1": "Parsing",
     "4.1.2": "Name, Role, Value",
@@ -431,7 +431,7 @@ SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2}
 class PageStructureTest(BaseWCAGTest):
     TEST_ID = "page_structure"
     TEST_NAME = "Page Structure & Semantics"
-    WCAG_CRITERIA = ["1.1.1", "1.3.1", "1.4.1", "2.2.2", "2.4.2", "2.4.4", "2.5.5", "3.1.1", "4.1.1", "4.1.2"]
+    WCAG_CRITERIA = ["1.1.1", "1.3.1", "1.4.1", "2.2.2", "2.4.2", "2.4.4", "2.5.8", "3.1.1", "4.1.1", "4.1.2"]
     DEFAULT_SEVERITY = "major"
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:

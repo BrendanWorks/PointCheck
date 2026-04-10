@@ -320,25 +320,27 @@ class WCAGAgent:
                 }
                 for r in results
             ]
-            passed = [f for f in findings if f["result"] == "pass"]
-            # Build the explicit list of criteria from actual findings so OLMo
-            # cannot hallucinate criterion numbers outside what was tested.
+            n_total    = len(findings)
+            n_passed   = sum(1 for f in findings if f["result"] == "pass")
+            n_failed   = sum(1 for f in findings if f["result"] == "fail")
+            n_warnings = sum(1 for f in findings if f["result"] == "warning")
+            # Constrain OLMo to only cite criteria that actually appear in the findings
             all_criteria = sorted({
                 c for f in findings for c in f.get("wcag_criteria", [])
             })
 
             prompt = (
-                f"You are a professional web accessibility auditor. "
-                f"You have completed a WCAG 2.1 Level AA audit of: {url}\n\n"
+                f"You are a professional web accessibility auditor.\n"
+                f"Audit of: {url}\n"
+                f"Results: {n_passed} passed, {n_failed} failed, {n_warnings} warnings "
+                f"out of {n_total} tests. Use these exact numbers — do not change them.\n\n"
                 f"Findings:\n{json.dumps(findings, indent=2)}\n\n"
-                f"The WCAG criteria covered in this audit are: {', '.join(all_criteria)}.\n"
-                f"Do NOT reference any other WCAG criterion numbers outside this list.\n\n"
-                f"Write a single executive summary paragraph of 100-150 words covering:\n"
-                f"- Overall result ({len(passed)}/{len(findings)} tests passed)\n"
-                f"- The most critical issues found and why they matter\n"
-                f"- The single most important remediation step\n\n"
-                f"Address the development team directly. No headings, no bullet points. "
-                f"Plain prose only."
+                f"WCAG criteria tested: {', '.join(all_criteria)}. "
+                f"Do NOT reference any criterion number outside this list.\n\n"
+                f"Write a single executive summary paragraph of 100-150 words. "
+                f"Cover: the overall result using the exact counts above, the most critical "
+                f"issues found and why they matter, and the single most important fix. "
+                f"Address the development team directly. No headings, no bullet points, plain prose only."
             )
 
             messages = [{"role": "user", "content": prompt}]

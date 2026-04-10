@@ -103,6 +103,9 @@ export default function RootLayout({
                   Allen AI OLMo3 and Molmo2
                 </a>
               </p>
+              <p style={{ opacity: 0.6 }}>
+                Automated + AI-assisted. A full manual audit is still recommended for complete WCAG coverage.
+              </p>
             </div>
             <nav className="flex flex-wrap gap-x-5 gap-y-1">
               <a href="/about" className="footer-link">About</a>

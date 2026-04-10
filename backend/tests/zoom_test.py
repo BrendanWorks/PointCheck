@@ -15,7 +15,7 @@ from tests.base_test import BaseWCAGTest, TestResult
 
 class ZoomTest(BaseWCAGTest):
     TEST_ID = "zoom"
-    TEST_NAME = "200% Zoom / Reflow"
+    TEST_NAME = "Resize Text & Reflow"
     WCAG_CRITERIA = ["1.4.4", "1.4.10"]
     DEFAULT_SEVERITY = "major"
 

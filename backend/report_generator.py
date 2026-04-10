@@ -14,19 +14,28 @@ WCAG_CRITERIA_LABELS = {
     "1.4.10": "Reflow",
     "2.1.1": "Keyboard",
     "2.1.2": "No Keyboard Trap",
+    "2.2.2": "Pause, Stop, Hide",
+    "2.4.1": "Bypass Blocks",
+    "2.4.2": "Page Titled",
     "2.4.3": "Focus Order",
+    "2.4.4": "Link Purpose",
     "2.4.7": "Focus Visible",
+    "2.5.3": "Label in Name",
+    "2.5.8": "Target Size (Minimum)",   # WCAG 2.2 AA
+    "3.1.1": "Language of Page",
     "3.3.1": "Error Identification",
     "3.3.2": "Labels or Instructions",
     "3.3.3": "Error Suggestion",
     "3.3.4": "Error Prevention",
+    "4.1.1": "Parsing",
+    "4.1.2": "Name, Role, Value",
 }
 
 SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "warning": 3}
 
 TEST_LABELS = {
     "keyboard_nav": "Keyboard-Only Navigation",
-    "zoom": "200% Zoom / Reflow",
+    "zoom": "Resize Text & Reflow",
     "color_blindness": "Color Blindness Simulation",
     "focus_indicator": "Focus Visibility",
     "form_errors": "Form Error Handling",
