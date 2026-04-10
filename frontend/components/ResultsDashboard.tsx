@@ -555,6 +555,11 @@ export default function ResultsDashboard({
           );
         })}
       </div>
+
+      {/* ── Disclaimer ── */}
+      <p className="text-xs text-center py-2" style={{ color: "var(--muted)", opacity: 0.6 }}>
+        Automated + AI-assisted testing. A full manual audit is still recommended for complete WCAG coverage.
+      </p>
     </div>
   );
 }
