@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 
-// ── Types (mirrored from ResultsDashboard) ─────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface StructureIssue {
   criterion: string;
   severity: string;
@@ -15,9 +15,6 @@ interface TestDetails {
   tabs_tested?: number;
   failure_count?: number;
   issues?: StructureIssue[];
-  critical_count?: number;
-  major_count?: number;
-  minor_count?: number;
   [key: string]: unknown;
 }
 
@@ -72,12 +69,33 @@ const MUTED:    RGB = [144, 144, 153];
 const ORANGE:   RGB = [255, 120, 0];
 
 // ── Page layout ───────────────────────────────────────────────────────────────
-const PW = 210;                 // A4 width mm
-const PH = 297;                 // A4 height mm
-const ML = 14;                  // left margin
-const MR = 14;                  // right margin
-const CW = PW - ML - MR;       // content width = 182 mm
-const FOOTER_H = 9;             // footer height mm
+const PW = 210;
+const PH = 297;
+const ML = 14;
+const MR = 14;
+const CW = PW - ML - MR;
+const FOOTER_H = 9;
+
+// ── Character sanitizer ───────────────────────────────────────────────────────
+// jsPDF's built-in Helvetica only covers Latin-1. Non-Latin-1 characters cause
+// encoding artifacts or trigger a monospace font fallback. Normalize everything
+// to safe ASCII equivalents before passing to jsPDF.
+function sanitize(text: string): string {
+  return (text ?? "")
+    .replace(/\u2018|\u2019/g, "'")   // curly single quotes
+    .replace(/\u201C|\u201D/g, '"')   // curly double quotes
+    .replace(/\u2013/g, "-")          // en dash
+    .replace(/\u2014/g, "-")          // em dash
+    .replace(/\u2026/g, "...")        // ellipsis
+    .replace(/\u2265/g, ">=")         // ≥
+    .replace(/\u2264/g, "<=")         // ≤
+    .replace(/\u00B1/g, "+/-")        // ±
+    .replace(/\u00D7/g, "x")          // ×
+    .replace(/\u2192/g, "->")         // →
+    .replace(/\u2022/g, "*")          // •
+    .replace(/\u00A0/g, " ")          // non-breaking space
+    .replace(/[^\x00-\xFF]/g, "?");   // any remaining non-Latin-1
+}
 
 export function generatePdf(report: Record<string, unknown>): void {
   const r = report as unknown as Report;
@@ -101,10 +119,10 @@ export function generatePdf(report: Record<string, unknown>): void {
     if (y + needed > PH - FOOTER_H - 4) newPage();
   }
 
-  // ── Color helpers ─────────────────────────────────────────────────────────────
-  function fill(rgb: RGB)   { doc.setFillColor(rgb[0], rgb[1], rgb[2]); }
-  function drawC(rgb: RGB)  { doc.setDrawColor(rgb[0], rgb[1], rgb[2]); }
-  function textC(rgb: RGB)  { doc.setTextColor(rgb[0], rgb[1], rgb[2]); }
+  // ── Draw helpers ──────────────────────────────────────────────────────────────
+  function fill(rgb: RGB)  { doc.setFillColor(rgb[0], rgb[1], rgb[2]); }
+  function drawC(rgb: RGB) { doc.setDrawColor(rgb[0], rgb[1], rgb[2]); }
+  function textC(rgb: RGB) { doc.setTextColor(rgb[0], rgb[1], rgb[2]); }
 
   function rRect(
     x: number, ry: number, w: number, h: number,
@@ -119,7 +137,7 @@ export function generatePdf(report: Record<string, unknown>): void {
     }
   }
 
-  // Draw a pill badge; returns x position after the pill
+  // Draw a pill badge; returns x position after the pill (for chaining)
   function pill(
     label: string, x: number, ty: number,
     bg: RGB, fg: RGB, bd: RGB, size = 7,
@@ -133,6 +151,16 @@ export function generatePdf(report: Record<string, unknown>): void {
     textC(fg);
     doc.text(label, x + 2, ty);
     return x + pw + 2;
+  }
+
+  // Draw section header label
+  function sectionLabel(label: string) {
+    checkSpace(10);
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "bold");
+    textC(MUTED);
+    doc.text(label, ML, y);
+    y += 5;
   }
 
   // ── PAGE 1: HEADER BAND ───────────────────────────────────────────────────────
@@ -153,7 +181,9 @@ export function generatePdf(report: Record<string, unknown>): void {
   textC(MUTED);
   doc.text("WCAG 2.1 Level AA Accessibility Report", ML + 5, 21);
 
-  const urlDisplay = (r.url?.length ?? 0) > 68 ? r.url.slice(0, 65) + "…" : (r.url ?? "");
+  const urlDisplay = sanitize(
+    (r.url?.length ?? 0) > 68 ? r.url.slice(0, 65) + "..." : (r.url ?? "")
+  );
   doc.setFontSize(9.5);
   doc.setFont("helvetica", "bold");
   textC(TEXT);
@@ -163,7 +193,7 @@ export function generatePdf(report: Record<string, unknown>): void {
   doc.setFontSize(7.5);
   doc.setFont("helvetica", "normal");
   textC(MUTED);
-  doc.text(`${dateStr}  ·  ${r.run_id ?? ""}`, ML + 5, 38);
+  doc.text(sanitize(`${dateStr}  -  ${r.run_id ?? ""}`), ML + 5, 38);
 
   y = 52;
 
@@ -196,10 +226,10 @@ export function generatePdf(report: Record<string, unknown>): void {
 
   // Summary counts — 4 boxes
   const counts: Array<{ label: string; value: number; fg: RGB; bg: RGB; bd: RGB }> = [
-    { label: "Passed",   value: r.summary?.passed       ?? 0, fg: LIME,    bg: [12,25,0],  bd: [35,70,0]  },
-    { label: "Failed",   value: r.summary?.failed        ?? 0, fg: CRIMSON, bg: [25,5,10],  bd: [70,15,25] },
-    { label: "Warnings", value: r.summary?.warnings      ?? 0, fg: AMBER,   bg: [25,18,0],  bd: [70,50,0]  },
-    { label: "Total",    value: r.summary?.total_tests   ?? 0, fg: TEXT,    bg: SURFACE2,   bd: BORDER     },
+    { label: "Passed",   value: r.summary?.passed      ?? 0, fg: LIME,    bg: [12,25,0],  bd: [35,70,0]  },
+    { label: "Failed",   value: r.summary?.failed       ?? 0, fg: CRIMSON, bg: [25,5,10],  bd: [70,15,25] },
+    { label: "Warnings", value: r.summary?.warnings     ?? 0, fg: AMBER,   bg: [25,18,0],  bd: [70,50,0]  },
+    { label: "Total",    value: r.summary?.total_tests  ?? 0, fg: TEXT,    bg: SURFACE2,   bd: BORDER     },
   ];
   const boxW = (CW - 9) / 4;
   counts.forEach((ct, i) => {
@@ -217,19 +247,73 @@ export function generatePdf(report: Record<string, unknown>): void {
 
   y += 25;
 
+  // ── TEST OVERVIEW TABLE ───────────────────────────────────────────────────────
+  const tests = r.test_summaries ?? [];
+  if (tests.length > 0) {
+    sectionLabel("TEST OVERVIEW");
+
+    const RESULT_FG: Record<string, RGB> = {
+      pass: LIME, fail: CRIMSON, warning: AMBER, error: ORANGE,
+    };
+    const RESULT_BG: Record<string, RGB> = {
+      pass: [12,25,0], fail: [25,5,10], warning: [25,18,0], error: [25,12,0],
+    };
+    const RESULT_BD: Record<string, RGB> = {
+      pass: [35,70,0], fail: [70,15,25], warning: [70,50,0], error: [70,35,0],
+    };
+    // ASCII result labels (no Unicode)
+    const RESULT_LABEL: Record<string, string> = {
+      pass: "PASS", fail: "FAIL", warning: "WARN", error: "ERR",
+    };
+
+    const rowH = 9;
+    const tableH = tests.length * rowH + 2;
+    checkSpace(tableH);
+
+    tests.forEach((ts, i) => {
+      const ry = y + i * rowH;
+      // Alternating row tint
+      if (i % 2 === 0) {
+        fill(SURFACE);
+        doc.rect(ML, ry, CW, rowH, "F");
+      }
+      // Result badge
+      const fg = RESULT_FG[ts.result] ?? AMBER;
+      const bg = RESULT_BG[ts.result] ?? ([25,18,0] as RGB);
+      const bd = RESULT_BD[ts.result] ?? ([70,50,0] as RGB);
+      const rlabel = RESULT_LABEL[ts.result] ?? "WARN";
+      pill(rlabel, ML + 2, ry + 6, bg, fg, bd, 6.5);
+
+      // Test name
+      doc.setFontSize(8.5);
+      doc.setFont("helvetica", "normal");
+      textC(TEXT);
+      doc.text(sanitize(ts.test_name), ML + 22, ry + 6);
+
+      // WCAG criteria (right-aligned, muted)
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "normal");
+      textC(MUTED);
+      const crit = (ts.wcag_criteria ?? []).join("  ");
+      doc.text(sanitize(crit), ML + CW - 2, ry + 6, { align: "right" });
+    });
+
+    // Bottom border on table
+    drawC(BORDER);
+    doc.line(ML, y + tableH - 2, ML + CW, y + tableH - 2);
+
+    y += tableH + 8;
+  }
+
   // ── EXECUTIVE SUMMARY ─────────────────────────────────────────────────────────
   if (r.narrative) {
-    checkSpace(20);
-
-    doc.setFontSize(7.5);
-    doc.setFont("helvetica", "bold");
-    textC(MUTED);
-    doc.text("AI ASSESSMENT", ML, y);
-    pill("OLMo3-7B", ML + 36, y, [12,25,0], LIME, [35,70,0], 7);
+    sectionLabel("AI ASSESSMENT");
+    y -= 5; // sectionLabel already advanced y by 5; we want the badge on the same line
+    pill("OLMo3-7B", ML + 36, y - 1, [12,25,0], LIME, [35,70,0], 7);
     y += 5;
 
     doc.setFontSize(8.5);
-    const narLines = doc.splitTextToSize(r.narrative, CW - 10);
+    const narLines = doc.splitTextToSize(sanitize(r.narrative), CW - 10);
     const narBoxH = narLines.length * 4.2 + 10;
 
     checkSpace(narBoxH);
@@ -242,24 +326,19 @@ export function generatePdf(report: Record<string, unknown>): void {
 
   // ── TOP FAILING CRITERIA ──────────────────────────────────────────────────────
   if ((r.top_criteria_failures?.length ?? 0) > 0) {
-    checkSpace(15);
-    doc.setFontSize(7.5);
-    doc.setFont("helvetica", "bold");
-    textC(MUTED);
-    doc.text("TOP FAILING WCAG CRITERIA", ML, y);
-    y += 6;
+    sectionLabel("TOP FAILING WCAG CRITERIA");
 
     for (const cf of r.top_criteria_failures) {
       checkSpace(7);
       doc.setFontSize(8);
       doc.setFont("helvetica", "bold");
       textC(MUTED);
-      doc.text(cf.criterion, ML, y);
+      doc.text(sanitize(cf.criterion), ML, y);
       doc.setFont("helvetica", "normal");
       textC(TEXT);
-      doc.text(cf.label, ML + 15, y);
+      doc.text(sanitize(cf.label), ML + 15, y);
       textC(CRIMSON);
-      doc.text(`${cf.failure_count}×`, ML + CW, y, { align: "right" });
+      doc.text(`${cf.failure_count}x`, ML + CW, y, { align: "right" });
       const barW = 22;
       const barX = ML + CW - barW - 8;
       rRect(barX, y - 2.5, barW, 2, SURFACE2, SURFACE2, 1);
@@ -272,12 +351,7 @@ export function generatePdf(report: Record<string, unknown>): void {
   }
 
   // ── PER-TEST RESULTS ──────────────────────────────────────────────────────────
-  checkSpace(12);
-  doc.setFontSize(7.5);
-  doc.setFont("helvetica", "bold");
-  textC(MUTED);
-  doc.text("TEST RESULTS", ML, y);
-  y += 6;
+  sectionLabel("TEST RESULTS");
 
   const RESULT_C: Record<string, { fg: RGB; bg: RGB; bd: RGB }> = {
     pass:    { fg: LIME,    bg: [12,25,0],  bd: [35,70,0]  },
@@ -285,33 +359,41 @@ export function generatePdf(report: Record<string, unknown>): void {
     warning: { fg: AMBER,   bg: [25,18,0],  bd: [70,50,0]  },
     error:   { fg: ORANGE,  bg: [25,12,0],  bd: [70,35,0]  },
   };
-  const RESULT_ICON: Record<string, string> = { pass: "✓", fail: "✗", warning: "⚠", error: "!" };
+  // ASCII-safe result icons (no Unicode symbols that corrupt in Helvetica)
+  const RESULT_ICON: Record<string, string> = {
+    pass: "P", fail: "F", warning: "W", error: "E",
+  };
   const SEV_C: Record<string, { fg: RGB; bg: RGB; bd: RGB }> = {
     critical: { fg: CRIMSON, bg: [25,5,10], bd: [70,15,25] },
     major:    { fg: ORANGE,  bg: [25,12,0], bd: [70,35,0]  },
     minor:    { fg: AMBER,   bg: [25,18,0], bd: [70,50,0]  },
   };
   const IMG_W = CW - 16;
-  const IMG_H = IMG_W / (16 / 9); // assume 16:9 Playwright viewport
+  const IMG_H = IMG_W / (16 / 9);
 
-  for (const ts of r.test_summaries ?? []) {
+  for (const ts of tests) {
     const rc = RESULT_C[ts.result] ?? RESULT_C.warning;
+    // Color WCAG criterion badges by the test's result
+    const critFg: RGB = rc.fg;
+    const critBd: RGB = rc.bd;
 
-    // Pre-split text so we can compute accurate card height
+    // Pre-split text for accurate card height calculation
     doc.setFontSize(8.5);
-    const frLines  = ts.failure_reason  ? doc.splitTextToSize(ts.failure_reason,  CW - 22) : [];
-    const recLines = ts.recommendation  ? doc.splitTextToSize(ts.recommendation,  CW - 22) : [];
+    doc.setFont("helvetica", "normal");
+    const frText  = sanitize(ts.failure_reason  ?? "");
+    const recText = sanitize(ts.recommendation  ?? "");
+    const frLines  = frText  ? doc.splitTextToSize(frText,  CW - 22) : [];
+    const recLines = recText ? doc.splitTextToSize(recText, CW - 22) : [];
 
-    let cardH = 7 + 12; // top pad + icon/name row
+    let cardH = 7 + 12;
     if ((ts.wcag_criteria?.length ?? 0) > 0) cardH += 8;
     if (frLines.length > 0)  cardH += 5 + frLines.length  * 4.2 + 3;
     if (recLines.length > 0) cardH += 5 + recLines.length * 4.2 + 3;
-    if (ts.screenshot_b64)   cardH += 5 + IMG_H + 2;
-    cardH += 5; // bottom pad
+    if (ts.screenshot_b64)   cardH += IMG_H + 4;
+    cardH += 5;
 
     checkSpace(cardH);
 
-    // Card background
     rRect(ML, y, CW, cardH, SURFACE, BORDER);
 
     let cy = y + 7;
@@ -329,29 +411,29 @@ export function generatePdf(report: Record<string, unknown>): void {
     doc.setFontSize(9.5);
     doc.setFont("helvetica", "bold");
     textC(TEXT);
-    doc.text(ts.test_name, ML + 14, cy + 1);
+    doc.text(sanitize(ts.test_name), ML + 14, cy + 1);
 
-    // Severity badge for failed tests
+    // Severity badge
     if (ts.result === "fail" && ts.severity && SEV_C[ts.severity]) {
       const sc = SEV_C[ts.severity];
       doc.setFontSize(9.5);
-      const nameW = doc.getTextWidth(ts.test_name);
-      pill(ts.severity, ML + 14 + nameW + 3, cy + 1.5, sc.bg, sc.fg, sc.bd, 7);
+      const nameW = doc.getTextWidth(sanitize(ts.test_name));
+      pill(sanitize(ts.severity), ML + 14 + nameW + 3, cy + 1.5, sc.bg, sc.fg, sc.bd, 7);
     }
 
     cy += 11;
 
-    // WCAG criteria pills
+    // WCAG criteria pills — colored by test result
     if ((ts.wcag_criteria?.length ?? 0) > 0) {
       let px = ML + 8;
       for (const c of ts.wcag_criteria) {
         doc.setFontSize(6.5);
+        doc.setFont("helvetica", "normal");
         const tw = doc.getTextWidth(c);
         const pw = tw + 4;
         if (px + pw > ML + CW - 8) break;
-        rRect(px, cy - 3, pw, 4.5, SURFACE2, BORDER, 1);
-        doc.setFont("helvetica", "normal");
-        textC(LIME);
+        rRect(px, cy - 3, pw, 4.5, SURFACE2, critBd, 1);
+        textC(critFg);
         doc.text(c, px + 2, cy);
         px += pw + 2;
       }
@@ -386,17 +468,17 @@ export function generatePdf(report: Record<string, unknown>): void {
       cy += recLines.length * 4.2 + 3;
     }
 
-    // Screenshot
+    // Screenshot — no label, just the image with a subtle border
     if (ts.screenshot_b64) {
-      doc.setFontSize(7);
-      doc.setFont("helvetica", "bold");
-      textC(MUTED);
-      doc.text("SCREENSHOT", ML + 8, cy);
-      cy += 4.5;
       try {
-        doc.addImage(`data:image/png;base64,${ts.screenshot_b64}`, "PNG", ML + 8, cy, IMG_W, IMG_H);
+        drawC(BORDER);
+        doc.rect(ML + 8, cy, IMG_W, IMG_H, "D");
+        doc.addImage(
+          `data:image/png;base64,${ts.screenshot_b64}`,
+          "PNG", ML + 8, cy, IMG_W, IMG_H,
+        );
       } catch {
-        // skip if image embedding fails
+        // skip silently if image embedding fails
       }
     }
 
@@ -415,8 +497,8 @@ export function generatePdf(report: Record<string, unknown>): void {
     doc.setFont("helvetica", "normal");
     textC(MUTED);
     doc.text("pointcheck.org", ML, PH - 3);
-    doc.text(`${p} / ${totalPages}`, PW - MR, PH - 3, { align: "right" });
     doc.text("WCAG 2.1 Level AA", PW / 2, PH - 3, { align: "center" });
+    doc.text(`${p} / ${totalPages}`, PW - MR, PH - 3, { align: "right" });
   }
 
   // ── Download ──────────────────────────────────────────────────────────────────
