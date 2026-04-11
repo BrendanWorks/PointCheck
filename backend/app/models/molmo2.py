@@ -184,12 +184,31 @@ class MolmoWebAnalyzer:
         Ask MolmoWeb-8B a free-form accessibility question about a screenshot.
         Returns plain-text answer (max ~150 tokens).
 
+        Wraps the question in an accessibility-expert framing.
+        Use analyze_raw() when you need the model to follow a custom prompt
+        exactly (e.g. the agent loop's JSON action format).
+
         Example:
             answer = await analyzer.analyze(img, "Is there a skip nav link?")
         """
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, self._analyze_sync, screenshot, question
+        )
+
+    async def analyze_raw(
+        self, screenshot: Image.Image, prompt: str, max_new_tokens: int = 200
+    ) -> str:
+        """
+        Run inference with prompt passed directly — no QA wrapper added.
+
+        Used by MolmoWebAgentLoop so that action-format prompts ("output JSON
+        with thought + action keys") are not clobbered by the accessibility
+        expert framing that analyze() adds.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._run_inference, screenshot, prompt, max_new_tokens
         )
 
     async def point_to(

@@ -291,10 +291,11 @@ class MolmoWebAgentLoop:
                 history=history_text,
             )
 
-            # --- MolmoWeb inference ---
+            # --- MolmoWeb inference (use analyze_raw — agent prompt must not be
+            #     wrapped in the QA "accessibility expert" framing that analyze() adds) ---
             try:
                 raw = await asyncio.wait_for(
-                    self.analyzer.analyze(screenshot, prompt),
+                    self.analyzer.analyze_raw(screenshot, prompt, max_new_tokens=256),
                     timeout=self.INFERENCE_TIMEOUT,
                 )
             except asyncio.TimeoutError:
