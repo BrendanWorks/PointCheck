@@ -64,7 +64,7 @@ image = (
     timeout=900,
     env={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
 )
-@modal.concurrent(max_inputs=3)  # reduced from 5 — 8B model uses more VRAM
+@modal.concurrent(max_inputs=3)  # 8B model uses more VRAM than original 4B
 @modal.asgi_app()
 def web():
     import sys
