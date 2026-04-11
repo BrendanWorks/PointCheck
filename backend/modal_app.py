@@ -43,6 +43,7 @@ image = (
         # ── Utilities ─────────────────────────────────────────────────────
         "httpx",
         "aiofiles",
+        "requests",               # REQUIRED — transformers dynamic module loader
     )
     .run_commands(
         "playwright install chromium",
