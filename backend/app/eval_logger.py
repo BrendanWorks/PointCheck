@@ -25,7 +25,27 @@ from pathlib import Path
 from typing import Any, Optional
 
 
-_DATASET_ROOT = Path(__file__).parents[3] / "datasets" / "molmoaccess-eval"
+# Modal container: /app/app/eval_logger.py (2 parents to /app)
+# Local dev:       backend/app/eval_logger.py (2 parents to backend/, 3 to repo root)
+# Use env var override or walk up to find a writable datasets/ dir.
+def _find_dataset_root() -> Path:
+    # Prefer an explicit env override
+    import os
+    if override := os.environ.get("MOLMOACCESS_DATASET_ROOT"):
+        return Path(override)
+    # Walk up looking for an existing datasets/ dir, else use /app/datasets
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "datasets" / "molmoaccess-eval"
+        if candidate.exists():
+            return candidate
+    # Default: /app/datasets/... (Modal) or alongside the package (local)
+    fallback = Path("/app/datasets/molmoaccess-eval")
+    if fallback.parent.parent.exists():
+        return fallback
+    return here.parents[1] / "datasets" / "molmoaccess-eval"
+
+_DATASET_ROOT = _find_dataset_root()
 
 
 def _slug(url: str) -> str:
