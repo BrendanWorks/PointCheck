@@ -129,25 +129,32 @@ class MolmoWebAnalyzer:
         }
 
         if self.device == "cuda":
-            # 4-bit NF4 for the language-model layers only.
-            # vision_backbone (SigLIP ViT, ~300M params / ~0.6 GB) is kept in
-            # bfloat16 via modules_to_not_convert because:
-            #   - Quantizing it to 4-bit causes Params4bit to return raw uint8
-            #     activations inside the ViT, hitting LayerNormKernelImpl Byte error.
-            #   - The 0.6 GB overhead is negligible vs. fixing the inference crash.
-            # Total VRAM: ~4.6 GB MolmoWeb + ~3.5 GB OLMo = ~8.1 GB static.
+            # 8-bit LLM.int8() quantization for MolmoWeb-8B.
+            #
+            # Why not 4-bit NF4?
+            #   bitsandbytes 4-bit uses lazy quantization: on the first forward
+            #   pass it does `Params4bit.data = uint8_tensor`. With
+            #   requires_grad=True this raises "data set to a tensor that requires
+            #   gradients must be floating point". Calling requires_grad_(False)
+            #   to work around it causes vision_backbone to return raw uint8
+            #   activations (LayerNormKernelImpl not implemented for 'Byte').
+            #   No BitsAndBytesConfig skip_modules parameter reliably excludes
+            #   sub-modules from 4-bit replacement in Transformers 5.x.
+            #
+            # Why 8-bit works:
+            #   Linear8bitLt stores original fp16 weights in self.weight.data
+            #   and quantized int8 in self.state.CB separately — no requires_grad
+            #   conflict. llm_int8_skip_modules=["vision_backbone"] is properly
+            #   wired in the 8-bit replacement pipeline, keeping the SigLIP ViT
+            #   in bfloat16 (~0.6 GB overhead).
+            #
+            # Memory: ~8 GB MolmoWeb (8-bit LM + bf16 vision) + ~3.5 GB OLMo
+            # (4-bit NF4) = ~11.5 GB static, 10.5 GB headroom on A10G 24 GB.
             model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.bfloat16,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-                # Keep SigLIP vision encoder in bfloat16.
-                # Quantizing it causes Params4bit to produce Byte activations
-                # inside the ViT → LayerNormKernelImpl not implemented for 'Byte'.
-                # llm_int8_skip_modules controls skip-list for BOTH 8-bit and 4-bit
-                # quantization in Transformers (bnb_4bit_skip_modules is not wired
-                # into the actual replacement pipeline).
+                load_in_8bit=True,
                 llm_int8_skip_modules=["vision_backbone"],
+                llm_int8_threshold=6.0,
+                llm_int8_has_fp16_weight=False,
             )
             model_kwargs["device_map"] = "auto"
         else:
@@ -159,14 +166,6 @@ class MolmoWebAnalyzer:
         if self.device == "cpu":
             self.model = self.model.to(self.device)
         self.model.eval()
-        # Required for 4-bit NF4 language-model layers: bitsandbytes lazily
-        # quantizes Params4bit on the first forward pass by doing
-        # `self.data = uint8_tensor`. With requires_grad=True this raises
-        # "data set to a tensor that requires gradients must be floating point
-        # or complex dtype". Setting False allows the uint8 assignment.
-        # Safe now that vision_backbone is excluded from quantization
-        # (bnb_4bit_skip_modules): bfloat16 vision params are unaffected.
-        self.model.requires_grad_(False)
 
         # ── Compat patch 3: cache_position shim ──────────────────────────────
         # Transformers 5.x no longer passes cache_position to

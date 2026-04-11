@@ -3,9 +3,13 @@ MolmoAccess Agent — Modal Deployment
 
 GPU: A10G (24 GB VRAM)
 Models:
-  allenai/MolmoWeb-8B        — 4-bit NF4 → ~4 GB   (visual WCAG analysis)
-  allenai/OLMo-3-7B-Instruct — 4-bit NF4 → ~3.5 GB (narrative)
-  Total: ~7.5 GB static + ~2.5 GB activation headroom — well within A10G 24 GB.
+  allenai/MolmoWeb-8B        — 8-bit LLM.int8() (vision_backbone in bf16) → ~8 GB
+  allenai/OLMo-3-7B-Instruct — 4-bit NF4 → ~3.5 GB
+  Total: ~11.5 GB static + ~10 GB activation headroom — well within A10G 24 GB.
+
+Note: MolmoWeb-8B uses 8-bit (not 4-bit) because bitsandbytes 4-bit NF4 lazy
+quantization conflicts with requires_grad on Params4bit, and llm_int8_skip_modules
+is not reliably wired into the 4-bit replacement pipeline in Transformers 5.x.
 
 Cold-start time: ~45-60s (models baked into image via setup_models.py).
 Warm requests: ~2-5s per page.

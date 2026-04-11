@@ -61,11 +61,10 @@ def download_molmoweb():
     model_kwargs: dict = {"trust_remote_code": True}
     if device == "cuda":
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
+            load_in_8bit=True,
             llm_int8_skip_modules=["vision_backbone"],
+            llm_int8_threshold=6.0,
+            llm_int8_has_fp16_weight=False,
         )
         model_kwargs["device_map"] = "auto"
     else:
