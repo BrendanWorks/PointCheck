@@ -240,6 +240,11 @@ class MolmoWebAnalyzer:
         self, screenshot: Image.Image, prompt: str, max_new_tokens: int = 200
     ) -> str:
         """Core inference — shared by both QA and point modes."""
+        # Free any cached allocations from previous calls before starting a
+        # new forward pass — reduces fragmentation on the A10G 24 GB budget.
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+
         messages = [{"role": "user", "content": [
             {"type": "text",  "text": prompt},
             {"type": "image", "image": screenshot},

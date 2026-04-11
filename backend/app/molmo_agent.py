@@ -295,7 +295,7 @@ class MolmoWebAgentLoop:
             #     wrapped in the QA "accessibility expert" framing that analyze() adds) ---
             try:
                 raw = await asyncio.wait_for(
-                    self.analyzer.analyze_raw(screenshot, prompt, max_new_tokens=256),
+                    self.analyzer.analyze_raw(screenshot, prompt, max_new_tokens=80),
                     timeout=self.INFERENCE_TIMEOUT,
                 )
             except asyncio.TimeoutError:
