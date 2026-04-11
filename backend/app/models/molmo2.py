@@ -146,6 +146,12 @@ class MolmoWebAnalyzer:
         if self.device == "cpu":
             self.model = self.model.to(self.device)
         self.model.eval()
+        # Disable gradients on all parameters — required for 4-bit NF4 models
+        # because bitsandbytes leaves some internal buffers with requires_grad=True
+        # (intended for QLoRA training). Without this, inference triggers
+        # "data set to a tensor that requires gradients must be floating point
+        # or complex dtype" when bitsandbytes dequantizes weights.
+        self.model.requires_grad_(False)
 
         # ── Compat patch 3: cache_position shim ──────────────────────────────
         # Transformers 5.x no longer passes cache_position to
