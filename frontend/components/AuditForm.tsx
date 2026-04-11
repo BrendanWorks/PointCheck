@@ -333,32 +333,32 @@ export default function AuditForm() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {[
                 {
-                  icon: "⌨",
+                  svg: <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6h-4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2z"/><path d="M4 8h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z"/><path d="M12 4v16"/></svg>,
                   title: "Keyboard Navigation",
                   body: "Drives real Tab presses through interactive elements — catches traps and missing skip links that linters ignore.",
                 },
                 {
-                  icon: "👁",
+                  svg: <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m4.93 19.07 1.41-1.41"/><path d="m17.66 6.34 1.41-1.41"/></svg>,
                   title: "Focus Visibility",
                   body: "Molmo2 visually confirms each focus ring exists — not just a CSS property check that CSS resets can fool.",
                 },
                 {
-                  icon: "🏗",
+                  svg: <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6"/><path d="M9 15h6"/><path d="M3 12h18"/></svg>,
                   title: "Page Structure",
                   body: "Alt text, headings, landmarks, ARIA, duplicate IDs, link text, and touch targets in one pass.",
                 },
                 {
-                  icon: "🎨",
+                  svg: <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20"/><path d="M2 12h20"/></svg>,
                   title: "Color & Contrast",
                   body: "Simulates Deuteranopia and walks every text node in the live DOM for real contrast ratios.",
                 },
                 {
-                  icon: "🔍",
+                  svg: <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v18h-6"/><path d="M3 21V3"/><path d="M3 15h12"/><path d="M9 9h6"/></svg>,
                   title: "Resize & Reflow",
                   body: "200% zoom via Chrome DevTools Protocol — detects horizontal scroll and overflow-clipped text.",
                 },
                 {
-                  icon: "📋",
+                  svg: <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>,
                   title: "Form Error Handling",
                   body: "Submits invalid data and checks error messages are descriptive, associated, and suggest corrections.",
                 },
@@ -368,7 +368,7 @@ export default function AuditForm() {
                   className="rounded-xl p-4 space-y-2"
                   style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
                 >
-                  <div className="text-2xl" aria-hidden="true">{card.icon}</div>
+                  <div className="w-7 h-7" style={{ color: "var(--lime)" }} aria-hidden="true">{card.svg}</div>
                   <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>{card.title}</p>
                   <p className="text-xs leading-relaxed" style={{ color: "var(--muted)" }}>{card.body}</p>
                 </div>
