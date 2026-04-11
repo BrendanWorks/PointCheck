@@ -270,11 +270,12 @@ class MolmoWebAnalyzer:
         }
         input_len = inputs["input_ids"].shape[1]
 
-        autocast_ctx = (
-            torch.autocast("cuda", dtype=torch.bfloat16)
-            if self.device == "cuda" else torch.no_grad()
-        )
-        with torch.inference_mode(), autocast_ctx:
+        # IMPORTANT: Do NOT use torch.autocast with 4-bit NF4 models.
+        # bitsandbytes handles dtype internally via bnb_4bit_compute_dtype;
+        # adding autocast on top triggers "data set to a tensor that requires
+        # gradients must be floating point or complex dtype" errors.
+        # torch.inference_mode() alone is correct for quantized models.
+        with torch.inference_mode():
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
