@@ -217,6 +217,68 @@ async def _scan_page(
 
         yield {"type": "test_complete", "url": page_url, "test": test_id}
 
+    # ── Step 1b: Mobile-viewport keyboard nav (hamburger menu discovery) ──
+    # Re-run keyboard_nav at 390×844 (iPhone 14) so the agent can find and
+    # test hamburger menus and mobile nav toggles that are hidden at 1280px.
+    # Only runs if keyboard_nav was requested and the desktop run didn't find
+    # a keyboard trap (trap = stop early, no point retesting mobile).
+    if "keyboard_nav" in tests_to_run:
+        desktop_kb_result = next(
+            (r for r in results if r.get("test_id") == "keyboard_nav"), None
+        )
+        desktop_was_trap = (
+            desktop_kb_result is not None
+            and "2.1.2" in desktop_kb_result.get("wcag_criteria", [])
+            and desktop_kb_result.get("result") == "fail"
+        )
+        if not desktop_was_trap:
+            yield {
+                "type": "progress",
+                "test": "keyboard_nav_mobile",
+                "message": "[MOBILE 390px] Re-running keyboard nav at mobile viewport to discover hamburger menus...",
+            }
+            try:
+                mobile_context = await page.context.browser.new_context(
+                    viewport={"width": 390, "height": 844},
+                    user_agent=(
+                        "MolmoAccessBot/1.0 "
+                        "(+https://github.com/BrendanWorks/molmoaccess; "
+                        "accessibility-testing-bot)"
+                    ),
+                )
+                mobile_page = await mobile_context.new_page()
+                await mobile_page.goto(page_url, wait_until="domcontentloaded", timeout=30_000)
+                await asyncio.sleep(1.5)
+
+                from app.wcag_checks.keyboard_nav import KeyboardNavTest
+                mobile_kb_test = KeyboardNavTest(
+                    analyzer=analyzer,
+                    run_dir=page_run_dir,
+                    wcag_version=wcag_version,
+                )
+                async for event in mobile_kb_test.run(mobile_page, task="Evaluate mobile keyboard accessibility"):
+                    if event["type"] == "progress":
+                        # Prefix mobile events so they're distinguishable in the stream
+                        event["message"] = "[MOBILE] " + event.get("message", "")
+                    elif event["type"] == "result":
+                        event["data"]["page_url"] = page_url
+                        event["data"]["test_name"] = "Keyboard Nav (Mobile 390px)"
+                        # Only surface as a new result if mobile found something desktop missed
+                        desktop_passed = desktop_kb_result and desktop_kb_result.get("result") == "pass"
+                        if event["data"].get("result") != "pass" or desktop_passed:
+                            event["data"]["test_id"] = "keyboard_nav_mobile"
+                            results.append(dict(event["data"]))
+                    yield event
+
+                await mobile_page.close()
+                await mobile_context.close()
+            except Exception as e:
+                yield {
+                    "type": "progress",
+                    "test": "keyboard_nav_mobile",
+                    "message": f"[MOBILE] viewport test error (non-fatal): {e}",
+                }
+
     # ── Step 2: Holistic vision analysis ─────────────────────────────────
     # One full-page screenshot → MolmoWeb-8B answers all 7 WCAG categories.
     # Supplements (never overrides) the per-check programmatic results above.

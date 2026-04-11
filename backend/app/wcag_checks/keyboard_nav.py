@@ -220,15 +220,19 @@ class KeyboardNavTest(BaseWCAGTest):
             i.get("criterion") == "2.4.1" for i in static_issues
         )
         if skip_links_found:
-            yield self._progress("MolmoWeb agent: clicking skip-nav link to verify it works...")
+            yield self._progress("[AGENT PATH] clicking skip-nav link to verify it works...")
             try:
+                _agent_progress_msgs: list[str] = []
                 agent = MolmoWebAgentLoop(self.analyzer, max_steps=3)
                 skip_result = await agent.run(
                     page,
                     "Find the 'Skip to main content' or 'Skip navigation' link near the "
                     "top of the page and click it. Then describe where focus landed — "
                     "did it skip past the navigation to the main content?",
+                    progress_cb=_agent_progress_msgs.append,
                 )
+                for msg in _agent_progress_msgs:
+                    yield self._progress(msg)
                 if skip_result.steps:
                     summary_line = (
                         f"Skip-nav agent ({len(skip_result.steps)} steps): "
@@ -254,8 +258,9 @@ class KeyboardNavTest(BaseWCAGTest):
         # 2. Discover interactive UI states that Playwright Tab cannot reach:
         #    hamburger menus, dropdowns, accordions, nav toggles.
         #    The agent opens them and we verify keyboard reachability of their content.
-        yield self._progress("MolmoWeb agent: discovering and testing interactive navigation elements...")
+        yield self._progress("[AGENT PATH] discovering and testing interactive navigation elements...")
         try:
+            _agent2_msgs: list[str] = []
             agent2 = MolmoWebAgentLoop(self.analyzer, max_steps=5)
             interactive_result = await agent2.run(
                 page,
@@ -263,7 +268,10 @@ class KeyboardNavTest(BaseWCAGTest):
                 "hamburger menus, dropdown menus, accordion nav sections, or 'More' buttons. "
                 "If you find one, click it to open it. Then press Tab twice and describe "
                 "whether the newly-revealed links/items are keyboard-focusable.",
+                progress_cb=_agent2_msgs.append,
             )
+            for msg in _agent2_msgs:
+                yield self._progress(msg)
             if interactive_result.steps and not interactive_result.completion_reason.startswith("could not"):
                 agent_findings.append(
                     f"Interactive nav agent ({len(interactive_result.steps)} steps): "

@@ -91,9 +91,10 @@ class FormErrorTest(BaseWCAGTest):
         # ── Agent layer: fill + submit form like a real user ─────────────────
         # MolmoWeb navigates the form visually — it handles multi-step forms,
         # JS-revealed fields, and non-standard submit patterns that selectors miss.
-        yield self._progress("MolmoWeb agent: filling form with invalid data to trigger errors...")
+        yield self._progress("[AGENT PATH] filling form with invalid data to trigger errors...")
         agent_submitted = False
         agent_log = ""
+        _form_agent_msgs: list[str] = []
         try:
             agent = MolmoWebAgentLoop(self.analyzer, max_steps=8)
             agent_result = await agent.run(
@@ -103,7 +104,10 @@ class FormErrorTest(BaseWCAGTest):
                 "bad email formats (e.g. 'notanemail'), too-short passwords (e.g. 'a'), "
                 "invalid dates (e.g. '99/99/9999'). Then submit the form by clicking the "
                 "submit button or pressing Enter.",
+                progress_cb=_form_agent_msgs.append,
             )
+            for msg in _form_agent_msgs:
+                yield self._progress(msg)
             if agent_result.steps:
                 agent_submitted = any(
                     s.action_type in ("click", "key") and s.executed
@@ -111,16 +115,16 @@ class FormErrorTest(BaseWCAGTest):
                 )
                 agent_log = agent_result.action_summary
                 yield self._progress(
-                    f"Agent completed {len(agent_result.steps)} action(s): {agent_log[:80]}"
+                    f"[AGENT PATH] completed {len(agent_result.steps)} action(s): {agent_log[:80]}"
                 )
         except Exception as e:
-            yield self._progress(f"Agent form fill error (non-fatal): {e}")
+            yield self._progress(f"[AGENT PATH] error (non-fatal): {e}")
 
         # ── Playwright fallback: direct fill + submit ─────────────────────────
         # Run if agent took no actions (e.g. form not visible or agent timed out).
         submitted = agent_submitted
         if not submitted:
-            yield self._progress("Playwright fallback: filling form fields directly...")
+            yield self._progress("[PLAYWRIGHT FALLBACK] agent took no actions — filling fields directly...")
             for form in form_info:
                 for inp in form["inputs"]:
                     sel = f"#{inp['id']}" if inp["id"] else f"[name='{inp['name']}']"

@@ -30,7 +30,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from PIL import Image
 from playwright.async_api import Page
@@ -257,6 +257,7 @@ class MolmoWebAgentLoop:
         page: Page,
         task: str,
         stop_keywords: list[str] | None = None,
+        progress_cb: "Optional[Callable[[str], None]]" = None,
     ) -> AgentRunResult:
         """
         Execute the agent loop for `task`.
@@ -265,11 +266,16 @@ class MolmoWebAgentLoop:
             page:          Playwright page (already navigated to target URL).
             task:          Natural-language task description.
             stop_keywords: If any of these appear in the page text, stop early.
+            progress_cb:   Optional sync callback(message: str) called after
+                           each step so callers can yield WS progress events.
 
         Returns:
             AgentRunResult with all steps + final screenshot.
             Never raises — all errors are captured in step.error.
         """
+        tag = f"[MolmoAgent task={task[:40]!r}]"
+        print(f"{tag} starting (max_steps={self.max_steps})")
+
         result = AgentRunResult(task=task)
         history: list[str] = []
 
@@ -292,9 +298,15 @@ class MolmoWebAgentLoop:
                     timeout=self.INFERENCE_TIMEOUT,
                 )
             except asyncio.TimeoutError:
+                msg = f"{tag} step {step_num}: inference timed out"
+                print(msg)
+                if progress_cb: progress_cb(msg)
                 result.completion_reason = "inference timed out"
                 break
             except Exception as e:
+                msg = f"{tag} step {step_num}: inference error: {e}"
+                print(msg)
+                if progress_cb: progress_cb(msg)
                 result.completion_reason = f"inference error: {e}"
                 break
 
@@ -310,12 +322,23 @@ class MolmoWebAgentLoop:
             )
             history.append(action_str)
 
+            # Log every step — visible in Modal logs and WS progress stream
+            step_msg = (
+                f"[AGENT step {step_num}/{self.max_steps}] "
+                f"thought: {thought[:80] or '—'} | action: {action_str}"
+            )
+            print(f"{tag} {step_msg}")
+            if progress_cb: progress_cb(step_msg)
+
             # Stop conditions: done/unparseable
             if action_type in ("done", "unknown"):
                 step.executed = True
                 result.steps.append(step)
                 result.completed = True
                 result.completion_reason = action_str
+                done_msg = f"[AGENT done] {action_str}"
+                print(f"{tag} {done_msg}")
+                if progress_cb: progress_cb(done_msg)
                 break
 
             # Execute the action via Playwright
@@ -325,7 +348,9 @@ class MolmoWebAgentLoop:
                 step.executed = True
             except Exception as e:
                 step.error = str(e)
-                # Don't abort on single-action failure — keep looping
+                err_msg = f"[AGENT step {step_num} execute error] {e}"
+                print(f"{tag} {err_msg}")
+                if progress_cb: progress_cb(err_msg)
 
             result.steps.append(step)
 
@@ -341,6 +366,13 @@ class MolmoWebAgentLoop:
                         break
                 except Exception:
                     pass
+
+        summary = (
+            f"{tag} finished: {len(result.steps)} step(s) executed, "
+            f"reason={result.completion_reason or 'max_steps reached'}"
+        )
+        print(summary)
+        if progress_cb: progress_cb(summary)
 
         result.final_screenshot = await self.analyzer.screenshot_to_image(page)
         return result
