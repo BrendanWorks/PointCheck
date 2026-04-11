@@ -158,6 +158,14 @@ class MolmoWebAnalyzer:
         if self.device == "cpu":
             self.model = self.model.to(self.device)
         self.model.eval()
+        # Required for 4-bit NF4 language-model layers: bitsandbytes lazily
+        # quantizes Params4bit on the first forward pass by doing
+        # `self.data = uint8_tensor`. With requires_grad=True this raises
+        # "data set to a tensor that requires gradients must be floating point
+        # or complex dtype". Setting False allows the uint8 assignment.
+        # Safe now that vision_backbone is excluded from quantization
+        # (bnb_4bit_skip_modules): bfloat16 vision params are unaffected.
+        self.model.requires_grad_(False)
 
         # ── Compat patch 3: cache_position shim ──────────────────────────────
         # Transformers 5.x no longer passes cache_position to
