@@ -157,33 +157,20 @@ Return ONLY the JSON object described in the system prompt.\
 """
 
 _VIDEO_SYSTEM_PROMPT = """\
-You are a WCAG 2.2 video accessibility expert. You are looking at a single \
-frame captured from a <video> element on a webpage.
+You are a WCAG 2.2 accessibility expert examining a single frame from a video player on a webpage.
 
-Check for:
-1. WCAG 1.2.2 — Are closed captions or subtitles visible in this frame?
-   Look for: subtitle text overlaid on the video, a CC indicator, or a caption panel below.
-2. WCAG 2.2.2 — Does the video player UI (if visible) include pause/stop/play controls?
-   Look for: a control bar at the bottom with pause, play, or stop buttons.
-3. WCAG 2.3.1 — Does any content in this frame appear to flash rapidly?
-   Look for: strobe-like patterns, rapid alternation between high-contrast areas.
+Answer these three questions about what you see in this frame:
 
-Output ONLY this JSON:
-{
-  "has_captions": true | false | "unknown",
-  "has_controls": true | false | "unknown",
-  "has_flashing": true | false | "unknown",
-  "caption_evidence": "brief description of what you see or 'not visible'",
-  "controls_evidence": "brief description of what you see or 'not visible'",
-  "issues": [
-    {
-      "wcag_criterion": "1.2.2",
-      "severity": "major",
-      "description": "No captions visible in captured frame"
-    }
-  ]
-}
-Only include issues you can visually confirm. Return empty "issues" if everything looks fine.\
+1. Captions (WCAG 1.2.2): Where are the closed captions or subtitles in this video frame? \
+Describe any caption text, CC indicator, or subtitle panel visible.
+
+2. Controls (WCAG 2.2.2): Where are the pause, play, and stop controls in the video player? \
+Describe their location and appearance.
+
+3. Flashing (WCAG 2.3.1): Describe any rapidly flashing, strobing, or high-contrast alternating \
+patterns visible in this frame.
+
+Be specific about what you see. If something is not visible, say so.\
 """
 
 
@@ -364,6 +351,49 @@ async def analyze_screenshot_with_molmo2(
     return validated
 
 
+def _parse_video_text_response(raw: str) -> dict:
+    """
+    Parse a plain-text affordance response to the video QA prompt.
+    Returns a dict with has_captions, has_controls, has_flashing, and evidence fields.
+    """
+    lower = raw.lower()
+    absent_phrases = ("not visible", "not present", "no captions", "no subtitles",
+                      "no cc", "no controls", "no pause", "no play", "not found",
+                      "cannot find", "can't find", "none visible", "i don't see",
+                      "not showing", "absent")
+
+    def _section(text: str, markers: tuple) -> str:
+        """Extract the sentence/paragraph following one of the section markers."""
+        for m in markers:
+            idx = text.lower().find(m)
+            if idx >= 0:
+                snippet = text[idx:idx + 200].split("\n")[0]
+                return snippet.strip()
+        return ""
+
+    caption_text = _section(raw, ("caption", "subtitle", "1.", "1:"))
+    controls_text = _section(raw, ("control", "pause", "play", "2.", "2:"))
+    flashing_text = _section(raw, ("flash", "strobe", "3.", "3:"))
+
+    def _absent(text: str) -> bool:
+        t = text.lower()
+        return any(p in t for p in absent_phrases) or not text.strip()
+
+    has_captions = "unknown" if not caption_text else (False if _absent(caption_text) else True)
+    has_controls = "unknown" if not controls_text else (False if _absent(controls_text) else True)
+    has_flashing = "unknown" if not flashing_text else (True if any(
+        p in flashing_text.lower() for p in ("flash", "strobe", "rapid", "alternating")
+    ) else False)
+
+    return {
+        "has_captions":     has_captions,
+        "has_controls":     has_controls,
+        "has_flashing":     has_flashing,
+        "caption_evidence": caption_text[:120] if caption_text else "not visible",
+        "controls_evidence": controls_text[:120] if controls_text else "not visible",
+    }
+
+
 async def analyze_video_frame(
     frame_bytes: bytes,
     analyzer: Optional["MolmoWebAnalyzer"] = None,
@@ -406,23 +436,23 @@ async def analyze_video_frame(
     except Exception:
         return empty
 
-    # Pass 1: structured QA analysis
+    # Pass 1: affordance QA analysis (plain text response, no JSON)
     raw = await _run_vision_inference(
         image, _VIDEO_SYSTEM_PROMPT, analyzer, max_new_tokens=256
     )
     if not raw:
         return {**empty, "raw_response": raw}
 
-    parsed = _extract_json(raw)
+    parsed = _parse_video_text_response(raw)
     result: dict[str, Any] = {
-        "has_captions":        parsed.get("has_captions", "unknown"),
-        "has_controls":        parsed.get("has_controls", "unknown"),
-        "has_flashing":        parsed.get("has_flashing", "unknown"),
-        "caption_evidence":    parsed.get("caption_evidence", ""),
-        "controls_evidence":   parsed.get("controls_evidence", ""),
+        "has_captions":        parsed["has_captions"],
+        "has_controls":        parsed["has_controls"],
+        "has_flashing":        parsed["has_flashing"],
+        "caption_evidence":    parsed["caption_evidence"],
+        "controls_evidence":   parsed["controls_evidence"],
         "caption_button_xy":   None,
         "playpause_button_xy": None,
-        "issues":              parsed.get("issues", []),
+        "issues":              [],
         "raw_response":        raw,
     }
 

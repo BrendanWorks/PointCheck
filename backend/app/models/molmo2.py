@@ -276,8 +276,8 @@ class MolmoWebAnalyzer:
         prompt = (
             "You are a web accessibility expert reviewing a webpage screenshot.\n"
             f"Question: {question}\n"
-            "Give a concise, factual answer based only on what you can see in the screenshot. "
-            "If you cannot determine the answer from the screenshot alone, say so."
+            "Describe what you observe in the screenshot to answer the question. "
+            "Be specific about the location and appearance of elements you can see."
         )
         response = self._run_inference(screenshot, prompt, max_new_tokens=180)
         print(f"[MolmoWebAnalyzer] QA '{question[:50]}' → {response[:80]}")

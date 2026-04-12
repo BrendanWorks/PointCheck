@@ -91,7 +91,7 @@ class ColorBlindnessTest(BaseWCAGTest):
     TEST_NAME = "Color-Blindness & Contrast Check"
     WCAG_CRITERIA = ["1.4.1", "1.4.3"]
     DEFAULT_SEVERITY = "major"
-    MOLMO_QUESTION = "Is any information conveyed by color alone with no text or icon label? Answer yes or no."
+    MOLMO_QUESTION = "What elements on this page use color alone to convey meaning, without any text labels or icons?"
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
         yield self._progress("Capturing baseline screenshot...")

@@ -234,7 +234,7 @@ class PageStructureTest(BaseWCAGTest):
     TEST_NAME = "Page Structure & Semantics"
     WCAG_CRITERIA = ["1.1.1", "1.3.1", "1.4.1", "2.2.2", "2.4.2", "2.4.4", "2.5.8", "3.1.1", "4.1.1", "4.1.2"]
     DEFAULT_SEVERITY = "major"
-    MOLMO_QUESTION = "Is there a visible main heading near the top of this page? Answer yes or no."
+    MOLMO_QUESTION = "Where is the main heading on this page? Describe its location, text, and visual prominence."
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
         yield self._progress("Running structural checks (alt text, headings, lang, links, ARIA)...")

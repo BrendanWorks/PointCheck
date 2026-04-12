@@ -73,24 +73,18 @@ class AgentRunResult:
 # ── Prompt ────────────────────────────────────────────────────────────────────
 
 _AGENT_PROMPT_TEMPLATE = """\
-You are a web accessibility testing agent. Your job is to interact with a webpage
-to test its accessibility for WCAG 2.2 compliance.
-
 Task: {task}
 
-Available actions:
-  mouse_click(x, y)                          — click at normalized coords in [0-100]
-  mouse_scroll(x, y, "down"|"up", amount)    — scroll; amount = lines (1-10)
-  key_press("Tab"|"Enter"|"Escape"|"Space")  — press a keyboard key
-  type_text("text")                          — type into the currently focused field
-  done("reason")                             — signal task is complete or untestable
+Previous actions: {history}
 
-Previous actions this run: {history}
+Choose ONE action. x and y coordinates are 0-100 (percent of viewport):
+  mouse_click(x, y)
+  mouse_scroll(x, y, "down"|"up", amount)
+  key_press("Tab"|"Enter"|"Escape"|"Space")
+  type_text("text")
+  done("reason")
 
-Output ONLY a JSON object with two keys — no markdown, no explanation:
-{{"thought": "<one sentence reasoning>", "action": "<single action call>"}}
-
-Example: {{"thought": "I'll click the skip nav link to verify it works.", "action": "mouse_click(5.0, 2.3)"}}"""
+Action:"""
 
 
 # ── Action parsing ────────────────────────────────────────────────────────────

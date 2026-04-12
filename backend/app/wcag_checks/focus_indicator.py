@@ -23,6 +23,40 @@ MAX_MOLMO_CALLS = 5   # cap GPU calls per page — each takes ~30-50s
 POINT_TOLERANCE = 40  # px tolerance for Molmo point-in-element check
 
 
+# ── MolmoWeb affordance response parser ───────────────────────────────────────
+# MolmoWeb Screenshot QA training uses affordance questions ("Where is X?"),
+# not yes/no questions. Responses describing location/appearance → indicator
+# found; responses containing negation phrases → indicator absent.
+
+_NO_INDICATOR_PHRASES = (
+    "no focus", "no indicator", "no outline", "no visible", "no highlight",
+    "no ring", "not visible", "not present", "cannot find", "can't find",
+    "doesn't appear", "does not appear", "no element", "none visible",
+    "i don't see", "i can't see", "unable to", "not focused",
+    "no focused", "nothing appears focused", "no apparent focus",
+    "no clear focus", "no keyboard focus",
+)
+
+
+def _parse_focus_response(response: str) -> Optional[bool]:
+    """
+    Parse a MolmoWeb affordance answer about a focus indicator.
+    Returns:
+      True  — indicator absent (negation phrases found)
+      False — indicator described (descriptive answer present)
+      None  — uninformative / too short to interpret
+    """
+    lower = response.strip().lower()
+    if not lower or lower in ("[not run]", "[timed out]"):
+        return None
+    if any(p in lower for p in _NO_INDICATOR_PHRASES):
+        return True   # absent
+    # A descriptive answer (≥15 chars with no negation) means found
+    if len(lower) >= 15:
+        return False  # described → present
+    return None  # too short
+
+
 def _point_in_rect(px: float, py: float, rect: dict, tol: int = POINT_TOLERANCE) -> bool:
     return (
         rect["x"] - tol <= px <= rect["x"] + rect["width"] + tol
@@ -122,13 +156,17 @@ class FocusIndicatorTest(BaseWCAGTest):
                     f"CSS outline found on {el_desc} — MolmoWeb visual confirmation "
                     f"({molmo_calls}/{MAX_MOLMO_CALLS})..."
                 )
-                # Primary: broad check — any focus indicator visible on the page?
+                # Affordance-style prompts — trained distribution for MolmoWeb Screenshot QA.
+                # "Where is X?" invites a descriptive location answer; yes/no pulls the model
+                # into trajectory mode and produces garbled numbered-step output.
                 primary_prompt = (
-                    "Is there a visible focus outline, border, or highlight around "
-                    "any element in this screenshot? Answer yes or no."
+                    "Where is the keyboard focus indicator on this page? "
+                    "Describe the location and appearance of any visible focus outline or highlight."
                 )
-                # Secondary: element-specific fallback if primary is garbled
-                secondary_prompt = "Is the element highlighted or outlined in this screenshot? Answer yes or no."
+                secondary_prompt = (
+                    "What element has keyboard focus in this screenshot? "
+                    "Describe its focus indicator."
+                )
 
                 molmo_raw = "[not run]"
                 molmo_secondary = "[not run]"
@@ -142,16 +180,16 @@ class FocusIndicatorTest(BaseWCAGTest):
                     yield self._progress(f"MolmoWeb timed out on tab {tab_num} (primary).")
                     molmo_raw = "[timed out]"
 
-                answer = molmo_raw.strip().lower()
-                if not answer.startswith("yes") and not answer.startswith("no"):
-                    # Garbled primary — try secondary for more signal
+                indicator_absent = _parse_focus_response(molmo_raw)
+                if indicator_absent is None:
+                    # Primary uninformative — try secondary for more signal
                     try:
                         molmo_secondary = await asyncio.wait_for(
                             self.analyzer.analyze_raw(screenshot, secondary_prompt),
                             timeout=self.MOLMO_TIMEOUT,
                         )
                         print(f"[FocusIndicator] tab{tab_num} secondary raw: {molmo_secondary!r}")
-                        answer = molmo_secondary.strip().lower()
+                        indicator_absent = _parse_focus_response(molmo_secondary)
                     except asyncio.TimeoutError:
                         yield self._progress(f"MolmoWeb timed out on tab {tab_num} (secondary).")
                         molmo_secondary = "[timed out]"
@@ -164,14 +202,16 @@ class FocusIndicatorTest(BaseWCAGTest):
                     if has_outline else f"box-shadow: {focus_info['boxShadow'][:50]}"
                 )
 
-                if answer.startswith("yes"):
+                if indicator_absent is False:
+                    # MolmoWeb described an indicator — visually confirmed
                     analysis = {
                         "result": "pass", "layer": "molmo_visual",
                         "focus_indicator_visible": True,
                         "focused_element": el_desc, "css_indicator": indicator_desc,
                         "molmo_answer": molmo_raw,
                     }
-                elif answer.startswith("no"):
+                elif indicator_absent is True:
+                    # MolmoWeb said no indicator found — visual failure
                     screenshot_path = self.analyzer.save_screenshot(
                         screenshot, self.run_dir, f"focus_fail_visual_tab{tab_num}"
                     )
@@ -196,7 +236,7 @@ class FocusIndicatorTest(BaseWCAGTest):
                         "screenshot_path": screenshot_path, "screenshot_b64": screenshot_b64,
                     })
                 else:
-                    # Garbled / empty — fall back to CSS signal, emit warning
+                    # MolmoWeb response uninformative — CSS signal is ground truth, warn
                     screenshot_path = self.analyzer.save_screenshot(
                         screenshot, self.run_dir, f"focus_warn_tab{tab_num}"
                     )
