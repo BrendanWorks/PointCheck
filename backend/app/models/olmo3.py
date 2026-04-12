@@ -43,10 +43,14 @@ class OLMo3Narrator:
 
         model_kwargs: dict = {}
         if self.device == "cuda":
+            # Explicit max_memory budget prevents device_map="auto" from
+            # trying to offload layers to CPU when fragmented VRAM makes
+            # free memory look scarce. OLMo-3-7B 4-bit ≈ 3.5 GB; 22 GB
+            # budget leaves ample headroom and keeps everything on GPU.
+            # (bitsandbytes 4-bit does not support CPU offload without
+            # llm_int8_enable_fp32_cpu_offload=True, so we must avoid it.)
             model_kwargs["device_map"] = "auto"
-            # 4-bit NF4 on CUDA: drops OLMo-3-7B from ~14 GB (bfloat16) to
-            # ~3.5 GB, keeping total VRAM (MolmoWeb ~4 GB + OLMo ~3.5 GB)
-            # well within the A10G 24 GB budget.
+            model_kwargs["max_memory"] = {0: "22GiB"}
             from transformers import BitsAndBytesConfig
             model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -55,7 +59,7 @@ class OLMo3Narrator:
                 bnb_4bit_quant_type="nf4",
             )
         else:
-            model_kwargs["torch_dtype"] = torch.float32
+            model_kwargs["dtype"] = torch.float32
 
         self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
         if self.device == "cpu":

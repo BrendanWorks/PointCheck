@@ -194,9 +194,14 @@ async def ws_crawl(ws: WebSocket, job_id: str):
 
             # ── Free MolmoWeb, then load OLMo ────────────────────────────────
             # Sequential residency — never both models in VRAM at once.
+            # gc.collect() must run before empty_cache() so Python finalizers
+            # release CUDA tensors; synchronize() drains pending CUDA ops.
             del crawler, analyzer
+            import gc as _gc
+            _gc.collect()
             import torch as _torch
             if _torch.cuda.is_available():
+                _torch.cuda.synchronize()
                 _torch.cuda.empty_cache()
             await send({"type": "status", "message": "Visual checks done. Loading OLMo-3-7B for narrative..."})
 
