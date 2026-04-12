@@ -76,45 +76,59 @@ _INTER_PAGE_DELAY_MS = 800
 
 async def _dismiss_cookie_consent(page: Page) -> None:
     """
-    Try common cookie/GDPR consent patterns and click Accept if found.
-    Tries each selector with a short timeout — silently skips if not present.
+    Dismiss any cookie/GDPR consent overlay on any site.
+
+    Strategy: JavaScript text scan first (works on any CMP regardless of
+    selector structure), then Playwright selector fallback for overlays in
+    iframes or shadow roots that JS can't reach.
+
     Called after every page.goto() so MolmoWeb sees the real page content.
+    If consent cookies are set on the first dismiss, subsequent page loads
+    in the same browser context won't show the banner again.
     """
-    selectors = [
-        # Text-based buttons (most reliable)
-        "button:has-text('Accept all')",
-        "button:has-text('Accept All')",
-        "button:has-text('Accept cookies')",
-        "button:has-text('Accept Cookies')",
-        "button:has-text('Accept')",
-        "button:has-text('Agree')",
-        "button:has-text('OK')",
-        "button:has-text('Got it')",
-        "button:has-text('I agree')",
-        "button:has-text('Allow all')",
-        "button:has-text('Allow All')",
-        "button:has-text('Continue')",
-        # ID/class pattern matches
+    # Primary: JS text scan — finds any visible button whose label starts with
+    # an accept/agree/close pattern, regardless of DOM structure or CMP vendor.
+    # Uses el.click() directly (no Playwright actionability checks) so it works
+    # even when the button is partially obscured during animation.
+    dismissed = await page.evaluate("""() => {
+        const ACCEPT_RE = /^(accept|agree|allow|ok|got it|i agree|i accept|consent|continue|close|dismiss|understood|sure|yes)/i;
+        const candidates = Array.from(document.querySelectorAll(
+            'button, [role="button"], a[href="#"], input[type="button"], input[type="submit"]'
+        ));
+        for (const el of candidates) {
+            const label = (
+                el.textContent || el.value ||
+                el.getAttribute('aria-label') || ''
+            ).trim();
+            if (label.length > 0 && label.length < 60 && ACCEPT_RE.test(label)) {
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {
+                    el.click();
+                    return label.slice(0, 40);
+                }
+            }
+        }
+        return null;
+    }""")
+    if dismissed:
+        await asyncio.sleep(0.5)
+        return
+
+    # Fallback: Playwright selectors for iframes and known CMP IDs that the
+    # JS scan above can't reach.
+    pw_selectors = [
         "#onetrust-accept-btn-handler",
         "#accept-cookies",
-        "#cookie-accept",
-        "[id*='cookie'] button[class*='accept']",
-        "[id*='cookie'] button[class*='agree']",
-        "[id*='consent'] button[class*='accept']",
-        "[id*='consent'] button[class*='agree']",
-        "[class*='cookie-banner'] button",
-        "[class*='cookie-notice'] button",
-        "[class*='gdpr'] button[class*='accept']",
-        # Aria-label patterns
-        "[aria-label*='Accept']",
-        "[aria-label*='accept cookies']",
-        "[aria-label*='cookie']",
+        "[data-testid='accept-button']",
+        "[data-cookiebanner='accept_button']",
+        "iframe[src*='consent'] >> button",
+        "iframe[id*='cookie'] >> button",
     ]
-    for sel in selectors:
+    for sel in pw_selectors:
         try:
-            await page.click(sel, timeout=800)
-            await asyncio.sleep(0.4)
-            return  # stop after first successful dismiss
+            await page.click(sel, timeout=600)
+            await asyncio.sleep(0.5)
+            return
         except Exception:
             continue
 
