@@ -297,7 +297,7 @@ class WCAGAgent:
         def _check(m: re.Match) -> str:
             crit = m.group(0)
             return crit if crit in self._VALID_WCAG_21 else ""
-        return re.sub(r'\b\d+\.\d+(?:\.\d+)?\b', _check, text)
+        return re.sub(r'\b\d+\.\d+(?:\.\d+)?(?!:)\b', _check, text)
 
     async def generate_narrative(self, results: list, url: str) -> str:
         loop = asyncio.get_event_loop()

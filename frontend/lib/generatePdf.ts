@@ -216,22 +216,15 @@ export function generatePdf(report: Record<string, unknown>): void {
   textC(MUTED);
   doc.text("Compliance", ML, y + 20);
 
-  const STATUS_MAP: Record<string, { label: string; fg: RGB; bg: RGB; bd: RGB }> = {
-    compliant:       { label: "Compliant",       fg: LIME,    bg: [15,30,0],  bd: [40,80,0]  },
-    issues_found:    { label: "Issues Found",    fg: AMBER,   bg: [30,22,0],  bd: [80,55,0]  },
-    critical_issues: { label: "Critical Issues", fg: CRIMSON, bg: [30,5,10],  bd: [80,15,25] },
-  };
-  const sm = STATUS_MAP[r.overall_status] ?? STATUS_MAP.issues_found;
-  pill(sm.label, ML + 40, y + 10, sm.bg, sm.fg, sm.bd, 8.5);
-
   y += 26;
 
-  // Summary counts — 4 boxes
+  // Summary counts — 4 boxes. "Issues Found" (failures) first so the most
+  // visible number matches the overall status without a competing badge nearby.
   const counts: Array<{ label: string; value: number; fg: RGB; bg: RGB; bd: RGB }> = [
-    { label: "Passed",   value: r.summary?.passed      ?? 0, fg: LIME,    bg: [12,25,0],  bd: [35,70,0]  },
-    { label: "Failed",   value: r.summary?.failed       ?? 0, fg: CRIMSON, bg: [25,5,10],  bd: [70,15,25] },
-    { label: "Warnings", value: r.summary?.warnings     ?? 0, fg: AMBER,   bg: [25,18,0],  bd: [70,50,0]  },
-    { label: "Total",    value: r.summary?.total_tests  ?? 0, fg: TEXT,    bg: SURFACE2,   bd: BORDER     },
+    { label: "Issues Found", value: r.summary?.failed       ?? 0, fg: CRIMSON, bg: [25,5,10],  bd: [70,15,25] },
+    { label: "Passed",       value: r.summary?.passed       ?? 0, fg: LIME,    bg: [12,25,0],  bd: [35,70,0]  },
+    { label: "Warnings",     value: r.summary?.warnings     ?? 0, fg: AMBER,   bg: [25,18,0],  bd: [70,50,0]  },
+    { label: "Total",        value: r.summary?.total_tests  ?? 0, fg: TEXT,    bg: SURFACE2,   bd: BORDER     },
   ];
   const boxW = (CW - 9) / 4;
   counts.forEach((ct, i) => {
