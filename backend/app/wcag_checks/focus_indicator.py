@@ -122,43 +122,96 @@ class FocusIndicatorTest(BaseWCAGTest):
                     f"CSS outline found on {el_desc} — MolmoWeb visual confirmation "
                     f"({molmo_calls}/{MAX_MOLMO_CALLS})..."
                 )
-                question = f"Is there a visible focus outline or ring around {el_desc}? Answer yes or no."
+                # Primary: broad check — any focus indicator visible on the page?
+                primary_prompt = (
+                    "Is there a visible focus outline, border, or highlight around "
+                    "any element in this screenshot? Answer yes or no."
+                )
+                # Secondary: element-specific fallback if primary is garbled
+                secondary_prompt = "Is the element highlighted or outlined in this screenshot? Answer yes or no."
+
+                molmo_raw = "[not run]"
+                molmo_secondary = "[not run]"
                 try:
-                    point = await asyncio.wait_for(
-                        self.analyzer.point_to(screenshot, f"focus indicator on {el_desc}"),
-                        timeout=self.MOLMO_TIMEOUT,
-                    )
                     molmo_raw = await asyncio.wait_for(
-                        self.analyzer.analyze(screenshot, question),
+                        self.analyzer.analyze_raw(screenshot, primary_prompt),
                         timeout=self.MOLMO_TIMEOUT,
                     )
+                    print(f"[FocusIndicator] tab{tab_num} primary raw: {molmo_raw!r}")
                 except asyncio.TimeoutError:
-                    yield self._progress(f"MolmoWeb timed out on tab {tab_num}.")
-                    point = None
+                    yield self._progress(f"MolmoWeb timed out on tab {tab_num} (primary).")
                     molmo_raw = "[timed out]"
 
-                molmo_logs.append(f"tab{tab_num}: {molmo_raw[:100]}")
+                answer = molmo_raw.strip().lower()
+                if not answer.startswith("yes") and not answer.startswith("no"):
+                    # Garbled primary — try secondary for more signal
+                    try:
+                        molmo_secondary = await asyncio.wait_for(
+                            self.analyzer.analyze_raw(screenshot, secondary_prompt),
+                            timeout=self.MOLMO_TIMEOUT,
+                        )
+                        print(f"[FocusIndicator] tab{tab_num} secondary raw: {molmo_secondary!r}")
+                        answer = molmo_secondary.strip().lower()
+                    except asyncio.TimeoutError:
+                        yield self._progress(f"MolmoWeb timed out on tab {tab_num} (secondary).")
+                        molmo_secondary = "[timed out]"
+
+                molmo_logs.append(
+                    f"tab{tab_num}: primary={molmo_raw[:80]!r} secondary={molmo_secondary[:80]!r}"
+                )
                 indicator_desc = (
                     f"outline: {focus_info['outlineWidth']} {focus_info['outlineStyle']} {focus_info['outlineColor']}"
                     if has_outline else f"box-shadow: {focus_info['boxShadow'][:50]}"
                 )
 
-                if point is None:
+                if answer.startswith("yes"):
+                    analysis = {
+                        "result": "pass", "layer": "molmo_visual",
+                        "focus_indicator_visible": True,
+                        "focused_element": el_desc, "css_indicator": indicator_desc,
+                        "molmo_answer": molmo_raw,
+                    }
+                elif answer.startswith("no"):
+                    screenshot_path = self.analyzer.save_screenshot(
+                        screenshot, self.run_dir, f"focus_fail_visual_tab{tab_num}"
+                    )
+                    screenshot_b64 = self.analyzer.image_to_base64(screenshot)
+                    analysis = {
+                        "result": "fail", "layer": "molmo_visual",
+                        "focus_indicator_visible": False,
+                        "focused_element": el_desc, "css_indicator": indicator_desc,
+                        "molmo_answer": molmo_raw,
+                        "failure_reason": (
+                            f"CSS reports focus indicator ({indicator_desc}) on {el_desc}, "
+                            "but MolmoWeb could not see a visible focus outline or highlight."
+                        ),
+                        "wcag_criteria": ["2.4.7"], "severity": "major",
+                        "recommendation": (
+                            "Ensure focus indicator has at least 3:1 contrast against adjacent "
+                            "colors and is at least 2px thick."
+                        ),
+                    }
+                    failures.append({
+                        "tab": tab_num, "focus_info": focus_info, "analysis": analysis,
+                        "screenshot_path": screenshot_path, "screenshot_b64": screenshot_b64,
+                    })
+                else:
+                    # Garbled / empty — fall back to CSS signal, emit warning
                     screenshot_path = self.analyzer.save_screenshot(
                         screenshot, self.run_dir, f"focus_warn_tab{tab_num}"
                     )
                     screenshot_b64 = self.analyzer.image_to_base64(screenshot)
                     analysis = {
                         "result": "warning", "layer": "molmo_visual",
-                        "focus_indicator_visible": False,
+                        "focus_indicator_visible": None,
                         "focused_element": el_desc, "css_indicator": indicator_desc,
-                        "molmo_point": None,
+                        "molmo_answer": molmo_raw,
                         "failure_reason": (
                             f"CSS reports focus indicator ({indicator_desc}) on {el_desc}, "
-                            "but MolmoWeb could not locate the focused element visually. "
-                            "Indicator may be present but visually insufficient."
+                            "but MolmoWeb returned an uninterpretable response — "
+                            "cannot visually confirm. Falling back to CSS signal."
                         ),
-                        "wcag_criteria": ["2.4.7"], "severity": "major",
+                        "wcag_criteria": ["2.4.7"], "severity": "minor",
                         "recommendation": (
                             "Ensure focus indicator has at least 3:1 contrast against adjacent "
                             "colors and is at least 2px thick."
@@ -168,41 +221,6 @@ class FocusIndicatorTest(BaseWCAGTest):
                         "tab": tab_num, "focus_info": focus_info, "analysis": analysis,
                         "screenshot_path": screenshot_path, "screenshot_b64": screenshot_b64,
                     })
-                else:
-                    px, py = point
-                    in_rect = _point_in_rect(px, py, focus_info)
-                    if in_rect:
-                        analysis = {
-                            "result": "pass", "layer": "molmo_visual",
-                            "focus_indicator_visible": True,
-                            "focused_element": el_desc, "css_indicator": indicator_desc,
-                            "molmo_point": {"x": round(px), "y": round(py)},
-                        }
-                    else:
-                        screenshot_path = self.analyzer.save_screenshot(
-                            screenshot, self.run_dir, f"focus_mismatch_tab{tab_num}"
-                        )
-                        screenshot_b64 = self.analyzer.image_to_base64(screenshot)
-                        analysis = {
-                            "result": "warning", "layer": "molmo_visual",
-                            "focus_indicator_visible": False,
-                            "focused_element": el_desc, "css_indicator": indicator_desc,
-                            "molmo_point": {"x": round(px), "y": round(py)},
-                            "failure_reason": (
-                                f"CSS indicator found on {el_desc} but MolmoWeb pointed to "
-                                f"({round(px)},{round(py)}) — outside element bounds. "
-                                "Focus indicator may be visually ambiguous."
-                            ),
-                            "wcag_criteria": ["2.4.7"], "severity": "minor",
-                            "recommendation": (
-                                "Increase focus indicator contrast and size so it is "
-                                "unambiguously associated with the focused element."
-                            ),
-                        }
-                        warnings.append({
-                            "tab": tab_num, "focus_info": focus_info, "analysis": analysis,
-                            "screenshot_path": screenshot_path, "screenshot_b64": screenshot_b64,
-                        })
             else:
                 indicator = []
                 if has_outline:
