@@ -48,33 +48,28 @@ class OLMo3Narrator:
             torch.cuda.empty_cache()
             free, total = torch.cuda.mem_get_info(0)
             print(f"[OLMo3] VRAM before load: {free/1e9:.1f} GB free / {total/1e9:.1f} GB total")
-
-            # Load bfloat16, no quantization, no device_map.
-            # WHY no device_map:
-            #   device_map="auto" triggers accelerate's dispatch_model(), which
-            #   tries to set hf_device_map and related attributes on the model.
-            #   OLMo-3's architecture has read-only @property descriptors for some
-            #   of these names → "property of 'Olmo3Model' object has no setter".
-            #   Loading without device_map brings the model to CPU first (~14 GB
-            #   system RAM), then .to("cuda") moves it to VRAM in one shot.
-            #   MolmoWeb + MolmoQA are freed before this point leaving ~28 GB free
-            #   on A100-40GB — the explicit .to() move fits with plenty of headroom.
             model_kwargs["dtype"] = torch.bfloat16
         else:
             model_kwargs["dtype"] = torch.float32
 
-        # low_cpu_mem_usage=True activates a two-phase load (init on meta device,
-        # then copy weights in) which avoids the initialization code path that
-        # triggers "property of 'Olmo3Model' has no setter" in Transformers 5.x.
-        model_kwargs["low_cpu_mem_usage"] = True
+        # ── Compat patch: Olmo3Model.all_tied_weights_keys has no setter ────────
+        # Transformers 5.x post_init() assigns self.all_tied_weights_keys inside
+        # modeling_utils.py:1298.  Olmo3Model defines all_tied_weights_keys as a
+        # read-only @property → AttributeError "property ... has no setter".
+        # Fix: add a silent no-op setter to the property before from_pretrained.
         try:
-            self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
-        except AttributeError as _ae:
-            import traceback as _tb
-            print(f"[OLMo3] from_pretrained AttributeError — full traceback:\n{_tb.format_exc()}")
-            # Retry without low_cpu_mem_usage in case meta-device init is the issue
-            model_kwargs.pop("low_cpu_mem_usage", None)
-            self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+            from transformers.models.olmo3.modeling_olmo3 import Olmo3Model as _Olmo3Model
+            _desc = _Olmo3Model.__dict__.get("all_tied_weights_keys")
+            if isinstance(_desc, property) and _desc.fset is None:
+                _Olmo3Model.all_tied_weights_keys = property(
+                    fget=_desc.fget,
+                    fset=lambda self, v: None,   # accept but discard the assignment
+                )
+                print("[OLMo3] Patched Olmo3Model.all_tied_weights_keys with no-op setter")
+        except Exception as _pe:
+            print(f"[OLMo3] all_tied_weights_keys patch attempt failed (non-fatal): {_pe}")
+
+        self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
         self.model = self.model.to(self.device)
         self.model.eval()
         print("[OLMo3] Ready")

@@ -241,7 +241,7 @@ class MolmoQAAnalyzer:
             # only if generate_from_batch is absent (shouldn't happen with this model).
             with torch.inference_mode():
                 if hasattr(self.model, "generate_from_batch"):
-                    from transformers import GenerationConfig
+                    from transformers import GenerationConfig, GenerationMixin
                     # Build config then explicitly set use_cache — constructor arg is
                     # silently ignored in some Transformers 5.x builds because the field
                     # was moved to a sub-config; setattr always works.
@@ -251,18 +251,23 @@ class MolmoQAAnalyzer:
                         do_sample=False,
                     )
                     gen_config.use_cache = True
-                    print(f"[MolmoQAAnalyzer] gen_config.use_cache={gen_config.use_cache}")
                     try:
                         outputs = self.model.generate_from_batch(
                             inputs,
                             gen_config,
                             tokenizer=self.processor.tokenizer,
                         )
-                    except AssertionError:
-                        # generate_from_batch asserts use_cache; fall back to standard
-                        # HF GenerationMixin.generate which doesn't have this requirement.
-                        print("[MolmoQAAnalyzer] generate_from_batch assertion failed — using model.generate fallback")
-                        outputs = self.model.generate(
+                    except (AssertionError, AttributeError, TypeError) as _gfb_err:
+                        # generate_from_batch fails in Transformers 5.x:
+                        #   AssertionError — asserts generation_config.use_cache even
+                        #                    when it IS set (checks model's own config).
+                        #   AttributeError  — internally calls super().generate() which
+                        #                    is missing from the MRO in Transformers 5.x.
+                        # Bypass: call GenerationMixin.generate() directly, which is the
+                        # canonical HF generate and has no super().generate() issue.
+                        print(f"[MolmoQAAnalyzer] generate_from_batch failed ({type(_gfb_err).__name__}: {_gfb_err}) — using GenerationMixin.generate fallback")
+                        outputs = GenerationMixin.generate(
+                            self.model,
                             **inputs,
                             max_new_tokens=max_new_tokens,
                             do_sample=False,
@@ -270,7 +275,8 @@ class MolmoQAAnalyzer:
                             logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
                         )
                 else:
-                    outputs = self.model.generate(
+                    outputs = GenerationMixin.generate(
+                        self.model,
                         **inputs,
                         max_new_tokens=max_new_tokens,
                         do_sample=False,
