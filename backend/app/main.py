@@ -232,7 +232,8 @@ async def ws_crawl(ws: WebSocket, job_id: str):
                 if _torch.cuda.is_available():
                     _torch.cuda.empty_cache()
             except Exception as _olmo_err:
-                print(f"[OLMo3] Load/generate failed (non-fatal): {_olmo_err}")
+                import traceback as _tb
+                print(f"[OLMo3] Load/generate failed (non-fatal): {_olmo_err}\n{_tb.format_exc()}")
                 await send({"type": "status", "message": "Narrative generation unavailable — delivering visual results."})
             job.narrative = narrative
 

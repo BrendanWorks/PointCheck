@@ -63,7 +63,18 @@ class OLMo3Narrator:
         else:
             model_kwargs["dtype"] = torch.float32
 
-        self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+        # low_cpu_mem_usage=True activates a two-phase load (init on meta device,
+        # then copy weights in) which avoids the initialization code path that
+        # triggers "property of 'Olmo3Model' has no setter" in Transformers 5.x.
+        model_kwargs["low_cpu_mem_usage"] = True
+        try:
+            self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+        except AttributeError as _ae:
+            import traceback as _tb
+            print(f"[OLMo3] from_pretrained AttributeError — full traceback:\n{_tb.format_exc()}")
+            # Retry without low_cpu_mem_usage in case meta-device init is the issue
+            model_kwargs.pop("low_cpu_mem_usage", None)
+            self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
         self.model = self.model.to(self.device)
         self.model.eval()
         print("[OLMo3] Ready")
