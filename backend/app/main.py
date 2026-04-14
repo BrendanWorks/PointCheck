@@ -152,8 +152,32 @@ async def ws_crawl(ws: WebSocket, job_id: str):
         except Exception:
             pass
 
+    # ── Keepalive task ────────────────────────────────────────────────────────
+    # Modal's load balancer silently drops WebSocket connections after ~45 s of
+    # inactivity.  Model loading (Phase 1 + Phase 2) can each take 60–90 s with
+    # no application messages.  We send a heartbeat every 20 s throughout the
+    # scan so the connection stays alive.
+    _ka_stop = [False]   # mutable cell so the coroutine always sees current value
+    async def _keepalive():
+        elapsed = 0
+        while not _ka_stop[0]:
+            await asyncio.sleep(20)
+            if _ka_stop[0]:
+                break
+            elapsed += 20
+            try:
+                await ws.send_json({"type": "status", "message": f"⏳ Still working… ({elapsed}s elapsed)"})
+            except Exception:
+                break
+
+    keepalive_task = asyncio.create_task(_keepalive())
+
     try:
+        # Tell the client we received their job before we compete for the lock
+        await send({"type": "status", "message": "Job queued — waiting for GPU…"})
+
         async with _scan_lock:
+
             loop = asyncio.get_event_loop()
 
             # ── Phase 1: MolmoWeb-8B bfloat16 (~16 GB) ───────────────────────
@@ -249,11 +273,17 @@ async def ws_crawl(ws: WebSocket, job_id: str):
             job.report = report
             job.status = "complete"
             job.completed_at = datetime.utcnow().isoformat()
+            _ka_stop[0] = True
+            keepalive_task.cancel()
             await send({"type": "done", "job_id": job_id, "report": strip_b64(report)})
 
     except WebSocketDisconnect:
+        _ka_stop[0] = True
+        keepalive_task.cancel()
         job.status = "disconnected"
     except Exception as e:
+        _ka_stop[0] = True
+        keepalive_task.cancel()
         import traceback
         tb = traceback.format_exc()
         print(f"[WS error] job={job_id}\n{tb}")
