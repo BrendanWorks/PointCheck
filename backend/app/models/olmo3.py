@@ -49,18 +49,14 @@ class OLMo3Narrator:
             free, total = torch.cuda.mem_get_info(0)
             print(f"[OLMo3] VRAM before load: {free/1e9:.1f} GB free / {total/1e9:.1f} GB total")
 
-            # device_map="auto" on A100-40GB: MolmoWeb + MolmoQA freed before
-            # this point, leaving ~16 GB free — plenty for OLMo 4-bit (~3.5 GB).
-            # device_map={"": 0} triggers a "property has no setter" error in
-            # OLMo-3's remote code during bitsandbytes quantization; "auto" avoids it.
+            # Load bfloat16, no quantization.
+            # 4-bit NF4 via bitsandbytes triggers "property of Olmo3Model has no
+            # setter" during quantization — a read-only property in the OLMo-3
+            # architecture that bitsandbytes tries to overwrite.
+            # bfloat16 ≈ 14 GB; MolmoWeb + MolmoQA are freed before this point
+            # leaving ~16 GB free on A100-40GB — fits with ~2 GB headroom.
+            model_kwargs["dtype"] = torch.bfloat16
             model_kwargs["device_map"] = "auto"
-            from transformers import BitsAndBytesConfig
-            model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.bfloat16,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-            )
         else:
             model_kwargs["dtype"] = torch.float32
 

@@ -224,7 +224,8 @@ class MolmoQAAnalyzer:
                 f"Question: {question}"
             )
 
-            raw = self.processor.process(images=screenshot, text=prompt)
+            # Pass images as a list — Molmo-7B-D-0924 processor expects [image], not image
+            raw = self.processor.process(images=[screenshot], text=prompt)
             inputs = {
                 k: (v.unsqueeze(0).to(self.device) if isinstance(v, torch.Tensor) else v)
                 for k, v in raw.items()
@@ -260,7 +261,8 @@ class MolmoQAAnalyzer:
             return self.processor.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
         except Exception as e:
-            print(f"[MolmoQAAnalyzer] query error: {e}")
+            import traceback as _tb
+            print(f"[MolmoQAAnalyzer] query error: {e}\n{_tb.format_exc()}")
             return ""
 
 
