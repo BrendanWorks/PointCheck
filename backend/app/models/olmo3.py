@@ -52,31 +52,30 @@ class OLMo3Narrator:
         else:
             model_kwargs["dtype"] = torch.float32
 
-        # ── Compat patch: Olmo3Model.all_tied_weights_keys has no setter ────────
+        # ── Compat patch: all_tied_weights_keys has no setter ───────────────────
         # Transformers 5.x post_init() (modeling_utils.py:1298) does:
         #   self.all_tied_weights_keys = self.get_expanded_tied_weights_keys(...)
-        # Olmo3Model (or a parent class) defines all_tied_weights_keys as a
-        # read-only @property → AttributeError "property ... has no setter".
-        # Fix: search the FULL MRO for the property (it may be on a parent class,
-        # not Olmo3Model directly), then shadow it on Olmo3Model with a no-op setter.
+        # for EVERY model instance. PreTrainedModel (or a parent) defines
+        # all_tied_weights_keys as a read-only @property → AttributeError.
+        # Both Olmo3Model AND Olmo3ForCausalLM hit this — each calls post_init().
+        # Fix: patch the property where it lives (PreTrainedModel or parent) once,
+        # which covers all subclasses (Olmo3Model, Olmo3ForCausalLM, etc.).
         try:
-            from transformers.models.olmo3.modeling_olmo3 import Olmo3Model as _Olmo3Model
+            from transformers import PreTrainedModel as _PTM
             _patched = False
-            for _cls in _Olmo3Model.__mro__:
+            for _cls in _PTM.__mro__:
                 _desc = _cls.__dict__.get("all_tied_weights_keys")
                 if isinstance(_desc, property) and _desc.fset is None:
-                    # Shadow on Olmo3Model itself so object.__setattr__ finds our
-                    # version first (class is earliest in MRO).
-                    _Olmo3Model.all_tied_weights_keys = property(
+                    _cls.all_tied_weights_keys = property(
                         fget=_desc.fget,
-                        fset=lambda self, v: None,   # accept but discard
+                        fset=lambda self, v: None,   # accept but discard the assignment
                     )
-                    print(f"[OLMo3] Shadowed all_tied_weights_keys (from {_cls.__name__}) "
-                          f"on Olmo3Model with no-op setter")
+                    print(f"[OLMo3] Patched {_cls.__name__}.all_tied_weights_keys "
+                          f"with no-op setter (covers all subclasses)")
                     _patched = True
                     break
             if not _patched:
-                print("[OLMo3] all_tied_weights_keys not found as read-only property in MRO")
+                print("[OLMo3] all_tied_weights_keys not found as read-only property")
         except Exception as _pe:
             print(f"[OLMo3] all_tied_weights_keys patch failed (non-fatal): {_pe}")
 

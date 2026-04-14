@@ -213,6 +213,27 @@ class MolmoQAAnalyzer:
 
         self.model.eval()
 
+        # ── Compat patch: DynamicCache subscript access (Transformers 5.x) ──────
+        # Molmo-7B-D's trust_remote_code generation loop does past_key_values[i]
+        # (tuple-style access). Transformers 5.x returns a DynamicCache object
+        # which is not subscriptable by default → TypeError.
+        # Fix: add __getitem__ / __len__ / __iter__ to DynamicCache globally,
+        # but only if they're not already there (safe to patch on any version).
+        try:
+            from transformers.cache_utils import DynamicCache as _DC
+            if "__getitem__" not in vars(_DC):
+                _DC.__getitem__ = lambda self, idx: (self.key_cache[idx], self.value_cache[idx])
+                _DC.__len__     = lambda self: len(self.key_cache)
+                _DC.__iter__    = lambda self: (
+                    (k, v) for k, v in zip(self.key_cache, self.value_cache)
+                )
+                print("[MolmoQAAnalyzer] Patched DynamicCache with tuple-style "
+                      "__getitem__ / __len__ / __iter__")
+            else:
+                print("[MolmoQAAnalyzer] DynamicCache already has __getitem__ — no patch needed")
+        except Exception as _dce:
+            print(f"[MolmoQAAnalyzer] DynamicCache patch failed (non-fatal): {_dce}")
+
         if device == "cuda" and torch.cuda.is_available():
             free2, total = torch.cuda.mem_get_info(0)
             print(
