@@ -9,7 +9,7 @@ import GoogleAnalytics from "@/components/GoogleAnalytics";
 export const metadata: Metadata = {
   title: "PointCheck — WCAG 2.1 & 2.2 Accessibility Tester",
   description:
-    "WCAG 2.1 & 2.2 Level AA accessibility testing powered by Allen AI's Molmo2 vision-language model. Catches failures that Axe and Lighthouse miss.",
+    "WCAG 2.1 & 2.2 Level AA accessibility testing powered by Allen AI's MolmoWeb-8B, Molmo-7B-D, and OLMo-3. Catches failures that Axe and Lighthouse miss.",
   icons: {
     icon: "/logo.svg",
     shortcut: "/logo.svg",
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "PointCheck — WCAG 2.1 & 2.2 Accessibility Tester",
     description:
-      "WCAG 2.1 & 2.2 Level AA accessibility testing powered by Allen AI's Molmo2 vision-language model. Catches failures that Axe and Lighthouse miss.",
+      "WCAG 2.1 & 2.2 Level AA accessibility testing powered by Allen AI's MolmoWeb-8B, Molmo-7B-D, and OLMo-3. Catches failures that Axe and Lighthouse miss.",
     url: "https://pointcheck.org",
     type: "website",
     siteName: "PointCheck",
@@ -60,17 +60,22 @@ export default function RootLayout({
               <HeaderVersion />
             </div>
           </a>
-          <nav className="flex items-center gap-5 text-sm">
-            <a href="/about" className="nav-link-muted">About</a>
-            <a
-              href="https://github.com/BrendanWorks/PointCheck"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="nav-link-lime"
-            >
-              GitHub
-            </a>
-          </nav>
+          <div className="flex flex-col items-end gap-1">
+            <nav className="flex items-center gap-5 text-sm">
+              <a href="/about" className="nav-link-muted">About</a>
+              <a
+                href="https://github.com/BrendanWorks/PointCheck"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="nav-link-lime"
+              >
+                GitHub
+              </a>
+            </nav>
+            <p className="text-xs" style={{ color: "var(--muted)", opacity: 0.6 }}>
+              MolmoWeb-8B &middot; Molmo-7B-D &middot; OLMo-3
+            </p>
+          </div>
         </header>
 
         {/* ── Page content ── */}
@@ -93,7 +98,7 @@ export default function RootLayout({
                   rel="noopener noreferrer"
                   style={{ color: "var(--lime)" }}
                 >
-                  Allen AI OLMo3 and Molmo2
+                  Allen AI MolmoWeb-8B, Molmo-7B-D &amp; OLMo-3
                 </a>
               </p>
               <p style={{ opacity: 0.75 }}>
