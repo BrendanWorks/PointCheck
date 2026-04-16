@@ -71,6 +71,80 @@ TEST_MAP: dict[str, type[BaseWCAGTest]] = {
 # Delay between page requests (ms) to avoid hammering servers
 _INTER_PAGE_DELAY_MS = 800
 
+# ── CAPTCHA / bot-wall detection ──────────────────────────────────────────────
+# Selectors that indicate a challenge page rather than the real site.
+_CAPTCHA_SELECTORS = [
+    "#cf-challenge-running",          # Cloudflare JS challenge (legacy)
+    "#cf-challenge-error-title",
+    "#cf-challenge-body-text",
+    "#cf-chl-widget",                 # Cloudflare Turnstile wrapper
+    "[data-cf-challenge]",
+    "iframe[src*='challenges.cloudflare.com']",
+    "iframe[src*='/cdn-cgi/challenge-platform']",
+    "div.cf-browser-verification",
+    "#g-recaptcha",                   # Google reCAPTCHA v2
+    ".g-recaptcha",
+    "iframe[src*='google.com/recaptcha']",
+    "iframe[src*='recaptcha.net']",
+    "div[data-sitekey]",              # reCAPTCHA / hCaptcha data attr
+    "iframe[src*='hcaptcha.com']",    # hCaptcha
+    "#hcaptcha-anchor",
+    "#cf-turnstile",                  # Cloudflare Turnstile (new)
+    ".cf-turnstile",
+    "iframe[src*='turnstile']",
+]
+
+_CAPTCHA_TITLE_RE = re.compile(
+    r"\b(challenge|verify|verification|access denied|just a moment|"
+    r"attention required|checking your browser|ddos protection|"
+    r"403 forbidden|blocked)\b",
+    re.IGNORECASE,
+)
+
+_CAPTCHA_URL_RE = re.compile(
+    r"(challenges\.cloudflare\.com|/cdn-cgi/challenge|/cdn-cgi/l/chk_|"
+    r"/captcha|/challenge|/blocked|captcha\.com|funcaptcha\.com)",
+    re.IGNORECASE,
+)
+
+
+async def _detect_captcha(page: "Page", requested_url: str) -> str | None:
+    """
+    Return a human-readable reason string if the loaded page looks like a
+    CAPTCHA / bot-wall, or None if the page appears to be the real site.
+
+    Three checks (any match → blocked):
+      1. Current URL redirected to a known challenge domain/path.
+      2. Page title contains bot-wall keywords.
+      3. Known CAPTCHA widget selectors present in the DOM.
+    """
+    # 1. URL check
+    current_url = page.url
+    if _CAPTCHA_URL_RE.search(current_url):
+        return f"redirected to challenge URL ({current_url})"
+
+    # 2. Title check
+    try:
+        title = await page.title()
+        if _CAPTCHA_TITLE_RE.search(title):
+            return f"page title indicates bot wall ("{title}")"
+    except Exception:
+        pass
+
+    # 3. DOM selector check
+    try:
+        selector_js = " || ".join(
+            f'!!document.querySelector("{sel}")'
+            for sel in _CAPTCHA_SELECTORS
+        )
+        found = await page.evaluate(f"() => {{ return {selector_js}; }}")
+        if found:
+            return "CAPTCHA widget detected in DOM"
+    except Exception:
+        pass
+
+    return None
+
 
 # ── Cookie consent dismissal ──────────────────────────────────────────────────
 
@@ -262,6 +336,22 @@ async def _scan_page(
         yield {"type": "page_error", "url": page_url, "error": str(e)}
         return
 
+    # ── CAPTCHA / bot-wall guard ──────────────────────────────────────────────
+    captcha_reason = await _detect_captcha(page, page_url)
+    if captcha_reason:
+        yield {
+            "type": "page_error",
+            "url": page_url,
+            "error": (
+                f"⚠️ CAPTCHA detected — {captcha_reason}. "
+                "This site blocked automated access before testing could begin. "
+                "Results cannot be generated for this URL. "
+                "Check that the site is publicly accessible without login or challenge pages."
+            ),
+        }
+        return
+    # ─────────────────────────────────────────────────────────────────────────
+
     results: list[dict] = []
 
     for i, test_id in enumerate(tests_to_run):
@@ -282,12 +372,24 @@ async def _scan_page(
         }
 
         # Reset page state before each test
+        _test_blocked = False
         try:
             await page.goto(page_url, wait_until="domcontentloaded", timeout=20_000)
             await asyncio.sleep(1.0)
             await _dismiss_overlays(page)
+            _captcha = await _detect_captcha(page, page_url)
+            if _captcha:
+                yield {
+                    "type": "progress",
+                    "test": test_id,
+                    "message": f"⚠️ CAPTCHA detected mid-scan ({_captcha}) — skipping remaining tests.",
+                }
+                _test_blocked = True
         except Exception:
             pass  # best effort; some pages redirect
+
+        if _test_blocked:
+            break
 
         try:
             async for event in test.run(page, task="Evaluate web accessibility"):
@@ -572,10 +674,12 @@ class SiteCrawler:
             browser: Browser = await pw.chromium.launch(headless=True)
             context: BrowserContext = await browser.new_context(
                 viewport={"width": 1280, "height": 720},
+                # Use a real browser UA — a bot-identifying string is the single
+                # most common trigger for Cloudflare / hCaptcha challenges.
                 user_agent=(
-                    "MolmoAccessBot/1.0 "
-                    "(+https://github.com/BrendanWorks/molmoaccess; "
-                    "accessibility-testing-bot)"
+                    "Mozilla/5.0 (X11; Linux x86_64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
                 ),
             )
 
