@@ -127,7 +127,7 @@ async def _detect_captcha(page: "Page", requested_url: str) -> str | None:
     try:
         title = await page.title()
         if _CAPTCHA_TITLE_RE.search(title):
-            return f"page title indicates bot wall ("{title}")"
+            return f'page title indicates bot wall ("{title}")'
     except Exception:
         pass
 
