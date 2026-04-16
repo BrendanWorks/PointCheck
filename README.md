@@ -4,9 +4,21 @@
 
 # PointCheck
 
-An automated WCAG 2.1 & 2.2 Level AA accessibility testing tool powered by three Allen AI open-source models running on a single A100-40GB GPU. Paste a URL, select WCAG 2.1 or 2.2 Level AA tests, and get a detailed accessibility report — including a plain-English executive summary from OLMo-3 and visual confirmation of focus rings from MolmoWeb.
+An automated WCAG 2.1 & 2.2 Level AA accessibility testing tool built on three Allen AI open-source models. Unlike rule-based scanners that only read the DOM, PointCheck uses **MolmoWeb-8B** — Allen AI's open-source web navigation model — to actually drive a headless browser, point at focused elements by pixel coordinate, and visually confirm that focus rings are present on screen, not just in the stylesheet. Paste a URL, get a detailed accessibility report with visual evidence and a plain-English executive summary.
 
 **Live:** [pointcheck.org](https://pointcheck.org)
+
+---
+
+## About
+
+Most accessibility tools (Lighthouse, axe, WAVE) work by parsing the DOM and applying rule-based checks — they read the HTML, not the screen. That means they miss failures that only appear visually: a focus ring defined in CSS that gets overridden by a third-party widget, a contrast failure caused by a layered alpha-channel background, or an interactive element that only responds to mouse events.
+
+PointCheck takes a different approach for visual checks. It uses **MolmoWeb-8B** ([allenai/MolmoWeb-8B](https://huggingface.co/allenai/MolmoWeb-8B)), Allen AI's open-source vision-language model trained for web navigation, to *see* the browser the way a human would. MolmoWeb takes a screenshot and returns a pixel coordinate — `<point x="42.3" y="67.1">` — pinpointing exactly where it believes the focused element is on screen. A second model, **Molmo-7B-D**, then answers a direct question about what's visible in that region: *"Is there a visible focus indicator? Describe it."*
+
+This two-model visual pipeline catches a category of failures that DOM-only tools cannot: focus rings that exist in CSS but are visually absent, interactive content that is only reachable by mouse, and contrast failures on elements with composed transparent backgrounds.
+
+After all six checks complete, **OLMo-3-7B-Instruct** writes a plain-English executive summary — no accessibility jargon — covering what was found, what failed, and what to prioritize first.
 
 ---
 
