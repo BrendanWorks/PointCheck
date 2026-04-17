@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { generatePdf } from "@/lib/generatePdf";
 import { analytics } from "@/lib/analytics";
+import { getWcagUrl } from "@/lib/wcagLinks";
 
 interface Molmo2Point {
   x: number;
@@ -385,7 +386,22 @@ export default function ResultsDashboard({
           <div className="space-y-3">
             {r.top_criteria_failures.map((cf) => (
               <div key={cf.criterion} className="flex items-center gap-3">
-                <span className="font-mono text-xs w-12" style={{ color: "var(--muted)" }}>{cf.criterion}</span>
+                {(() => {
+                  const href = getWcagUrl(cf.criterion, r.wcag_version ?? "2.2");
+                  return href ? (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-xs w-12 hover:underline"
+                      style={{ color: "var(--lime)" }}
+                    >
+                      {cf.criterion}
+                    </a>
+                  ) : (
+                    <span className="font-mono text-xs w-12" style={{ color: "var(--muted)" }}>{cf.criterion}</span>
+                  );
+                })()}
                 <span className="text-sm flex-1" style={{ color: "var(--text)" }}>{cf.label}</span>
                 <span className="text-xs font-bold tabular-nums" style={{ color: "var(--crimson)" }}>
                   {cf.failure_count}×
@@ -496,15 +512,29 @@ export default function ResultsDashboard({
                         WCAG Criteria
                       </p>
                       <div className="flex flex-wrap gap-1">
-                        {ts.wcag_criteria.map((c) => (
-                          <span
-                            key={c}
-                            className="font-mono text-xs px-2 py-0.5 rounded"
-                            style={{ background: "var(--surface2)", color: "var(--lime)", border: "1px solid var(--border)" }}
-                          >
-                            {c}
-                          </span>
-                        ))}
+                        {ts.wcag_criteria.map((c) => {
+                          const href = getWcagUrl(c, r.wcag_version ?? "2.2");
+                          return href ? (
+                            <a
+                              key={c}
+                              href={href}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-mono text-xs px-2 py-0.5 rounded hover:underline"
+                              style={{ background: "var(--surface2)", color: "var(--lime)", border: "1px solid rgba(204,255,0,0.35)" }}
+                            >
+                              {c}
+                            </a>
+                          ) : (
+                            <span
+                              key={c}
+                              className="font-mono text-xs px-2 py-0.5 rounded"
+                              style={{ background: "var(--surface2)", color: "var(--lime)", border: "1px solid var(--border)" }}
+                            >
+                              {c}
+                            </span>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -633,12 +663,27 @@ export default function ResultsDashboard({
                               style={{ background: sev.bg, border: `1px solid ${sev.border}` }}
                             >
                               <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                                <span
-                                  className="font-mono px-1.5 py-0.5 rounded text-xs"
-                                  style={{ background: "var(--surface2)", color: "var(--lime)", border: "1px solid var(--border)" }}
-                                >
-                                  {issue.criterion}
-                                </span>
+                                {(() => {
+                                  const href = getWcagUrl(issue.criterion, r.wcag_version ?? "2.2");
+                                  return href ? (
+                                    <a
+                                      href={href}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="font-mono px-1.5 py-0.5 rounded text-xs hover:underline"
+                                      style={{ background: "var(--surface2)", color: "var(--lime)", border: "1px solid rgba(204,255,0,0.35)" }}
+                                    >
+                                      {issue.criterion}
+                                    </a>
+                                  ) : (
+                                    <span
+                                      className="font-mono px-1.5 py-0.5 rounded text-xs"
+                                      style={{ background: "var(--surface2)", color: "var(--lime)", border: "1px solid var(--border)" }}
+                                    >
+                                      {issue.criterion}
+                                    </span>
+                                  );
+                                })()}
                                 <span className="font-semibold capitalize" style={{ color: sev.color }}>
                                   {issue.severity}
                                 </span>
