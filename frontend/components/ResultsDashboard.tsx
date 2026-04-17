@@ -112,6 +112,63 @@ const STATUS_STYLE: Record<string, { label: string; color: string; bg: string }>
   critical_issues: { label: "Critical Issues",color: "var(--crimson)", bg: "rgba(255,51,102,0.1)" },
 };
 
+// ── Confidence tier ───────────────────────────────────────────────────────────
+//
+// Derived purely from fields already present in TestSummary — no backend change.
+//
+// HIGH   → deterministic or AI-visually-confirmed result
+// MEDIUM → algorithmic with known edge cases, or limited coverage
+// LOW    → very few elements tested; result has low signal
+//
+type ConfidenceTier = "high" | "medium" | "low";
+
+const CONFIDENCE_STYLE: Record<ConfidenceTier, { label: string; color: string; bg: string; border: string }> = {
+  high:   { label: "High confidence",   color: "#6EE7B7",                bg: "rgba(110,231,183,0.08)", border: "rgba(110,231,183,0.2)" },
+  medium: { label: "Medium confidence", color: "var(--muted)",           bg: "transparent",            border: "var(--border)" },
+  low:    { label: "Low confidence",    color: "rgba(255,184,0,0.75)",   bg: "rgba(255,184,0,0.06)",   border: "rgba(255,184,0,0.2)" },
+};
+
+const CONFIDENCE_TOOLTIP: Record<ConfidenceTier, string> = {
+  high:   "Result confirmed by deterministic analysis or MolmoWeb visual inspection",
+  medium: "Result is algorithmic; edge cases or limited page coverage may affect accuracy",
+  low:    "Very few elements were testable on this page — treat result as indicative only",
+};
+
+function getConfidenceTier(ts: TestSummary): ConfidenceTier {
+  const d = ts.details ?? {};
+  switch (ts.test_id) {
+    case "page_structure":
+      // Deterministic JS scan — always high
+      return "high";
+
+    case "zoom":
+      // Deterministic browser measurement — always high
+      return "high";
+
+    case "focus_indicator":
+      if ((d.tabs_tested ?? 0) < 3) return "low";
+      if (d.molmo2_used) return "high";   // AI visual confirmation
+      return "medium";                     // CSS-only
+
+    case "keyboard_nav":
+      if ((d.tabs_tested ?? 0) >= 5) return "high";
+      if ((d.tabs_tested ?? 0) >= 2) return "medium";
+      return "low";
+
+    case "color_blindness":
+      // Algorithmic contrast walk; pass results are reliable, failures
+      // can have alpha-compositing edge cases
+      return ts.result === "pass" ? "high" : "medium";
+
+    case "form_errors":
+      // Reliability depends entirely on finding forms — medium by default
+      return "medium";
+
+    default:
+      return "medium";
+  }
+}
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const card = {
@@ -305,6 +362,8 @@ export default function ResultsDashboard({
         {r.test_summaries?.map((ts) => {
           const rs = RESULT_STYLE[ts.result] ?? RESULT_STYLE.warning;
           const expanded = expandedTest === ts.test_id;
+          const tier = getConfidenceTier(ts);
+          const cs = CONFIDENCE_STYLE[tier];
           return (
             <div
               key={ts.test_id}
@@ -337,6 +396,14 @@ export default function ResultsDashboard({
                     {ts.severity}
                   </span>
                 )}
+                {/* Confidence tier badge */}
+                <span
+                  className="hidden sm:inline text-xs px-2 py-0.5 rounded font-mono"
+                  style={{ background: cs.bg, color: cs.color, border: `1px solid ${cs.border}` }}
+                  title={CONFIDENCE_TOOLTIP[tier]}
+                >
+                  {tier === "high" ? "● high" : tier === "medium" ? "◐ med" : "○ low"}
+                </span>
                 {ts.wcag_criteria?.map((c) => (
                   <span
                     key={c}
