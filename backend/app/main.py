@@ -36,10 +36,11 @@ Two-phase sequential model residency on Modal A100-40GB (42.4 GB VRAM):
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -70,11 +71,47 @@ SCREENSHOTS_DIR.mkdir(exist_ok=True)
 app.mount("/screenshots", StaticFiles(directory=str(SCREENSHOTS_DIR)), name="screenshots")
 
 
-# In-memory job store (replace with Redis/DB for production)
+# In-memory job store — tracks active + recently completed jobs within this container.
 _jobs: dict[str, CrawlJobState] = {}
 
-# Serialise scans so only one model-load phase runs at a time
+# Serialise scans so only one model-load phase runs at a time.
 _scan_lock = asyncio.Lock()
+
+# ── Persistent job store (Modal Dict) ─────────────────────────────────────────
+# Completed jobs are written here so permalinks survive container restarts.
+# Dict name is read from MODAL_JOBS_DICT env var; Modal's --env flag isolates
+# staging and prod into separate namespaces, so they never share state.
+# Falls back to no-op when running locally (modal package unavailable or no auth).
+
+_MODAL_DICT_NAME: str = os.environ.get("MODAL_JOBS_DICT", "pointcheck-jobs")
+_modal_store: Any = None          # modal.Dict handle once initialised
+_modal_store_ready: bool | None = None  # None = not tried yet
+
+
+def _get_modal_store() -> Any | None:
+    """Return the Modal Dict handle, or None if unavailable."""
+    global _modal_store, _modal_store_ready
+    if _modal_store_ready is None:
+        try:
+            import modal as _modal
+            _modal_store = _modal.Dict.from_name(_MODAL_DICT_NAME, create_if_missing=True)
+            _modal_store_ready = True
+            print(f"[jobs] Modal Dict '{_MODAL_DICT_NAME}' ready — permalinks will persist.")
+        except Exception as exc:
+            _modal_store_ready = False
+            print(f"[jobs] Modal Dict unavailable, using in-memory only: {exc}")
+    return _modal_store if _modal_store_ready else None
+
+
+def _persist_completed_job(job: CrawlJobState) -> None:
+    """Write a completed job to the persistent store. Fire-and-forget; never raises."""
+    store = _get_modal_store()
+    if store is None:
+        return
+    try:
+        store[job.job_id] = job.model_dump()
+    except Exception as exc:
+        print(f"[jobs] Failed to persist job {job.job_id}: {exc}")
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────────
@@ -107,10 +144,18 @@ async def create_crawl(req: CrawlRequest):
 
 @app.get("/api/crawl/{job_id}")
 async def get_crawl(job_id: str):
-    if job_id not in _jobs:
-        raise HTTPException(404, "Job not found")
-    job = _jobs[job_id]
-    return job.model_dump()
+    # Check in-memory first (active / recently completed in this container)
+    if job_id in _jobs:
+        return _jobs[job_id].model_dump()
+    # Fall back to persistent store (survives container restarts)
+    store = _get_modal_store()
+    if store is not None:
+        try:
+            data = store[job_id]
+            return data
+        except KeyError:
+            pass
+    raise HTTPException(404, "Job not found")
 
 
 @app.get("/api/crawls")
@@ -281,6 +326,8 @@ async def ws_crawl(ws: WebSocket, job_id: str):
             job.report = report
             job.status = "complete"
             job.completed_at = datetime.utcnow().isoformat()
+            # Persist to Modal Dict so this job is retrievable after container restarts
+            _persist_completed_job(job)
             _ka_stop[0] = True
             keepalive_task.cancel()
             await send({"type": "done", "job_id": job_id, "report": strip_b64(report)})

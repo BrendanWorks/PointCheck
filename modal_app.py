@@ -46,7 +46,13 @@ image = (
     image=image,
     gpu="A100-40GB",
     timeout=900,
-    env={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
+    env={
+        "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+        # Persistent job store — Modal Dict name for permalink support.
+        # Modal's --env flag isolates staging and prod into separate namespaces,
+        # so staging and prod never share state even with the same dict name.
+        "MODAL_JOBS_DICT": "pointcheck-jobs",
+    },
 )
 @modal.concurrent(max_inputs=5)
 @modal.asgi_app()

@@ -450,9 +450,41 @@ class MolmoWebAnalyzer:
             # from MolmoWeb's trust_remote_code hooks.
             model_kwargs["device_map"] = {"": 0}
 
-        self.model = AutoModelForImageTextToText.from_pretrained(
-            model_name, **model_kwargs
-        )
+        try:
+            self.model = AutoModelForImageTextToText.from_pretrained(
+                model_name, **model_kwargs
+            )
+        except AttributeError as _ae:
+            if "Molmo2TextModel" not in str(_ae) or "no setter" not in str(_ae):
+                raise
+            # New modeling_molmo2.py added read-only @property decorators to
+            # Molmo2TextModel (same pattern as OLMo3 — see setup_models.py).
+            # Find all Molmo2* classes in sys.modules and replace read-only
+            # properties with no-op setters so from_pretrained can proceed.
+            import sys as _sys
+            _patched: list[str] = []
+            for _mod in list(_sys.modules.values()):
+                if _mod is None:
+                    continue
+                if "molmo2" not in (getattr(_mod, "__name__", "") or "").lower():
+                    continue
+                for _attr in list(vars(_mod).keys()):
+                    _cls = getattr(_mod, _attr, None)
+                    if not isinstance(_cls, type):
+                        continue
+                    for _pname, _pval in list(vars(_cls).items()):
+                        if isinstance(_pval, property) and _pval.fset is None:
+                            # No-op setter — allows the write without changing state.
+                            # The getter still reflects true model state.
+                            setattr(_cls, _pname, property(_pval.fget, lambda self, v: None, _pval.fdel, _pval.__doc__))
+                            _patched.append(f"{_cls.__name__}.{_pname}")
+            print(f"[MolmoWebAnalyzer] Read-only property patch applied: {_patched}; retrying from_pretrained")
+            gc.collect()
+            if self.device == "cuda" and torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            self.model = AutoModelForImageTextToText.from_pretrained(
+                model_name, **model_kwargs
+            )
 
         # CRITICAL: move new_embedding to GPU after from_pretrained.
         # MolmoWeb adds `new_embedding` (action-token embeddings) after the
