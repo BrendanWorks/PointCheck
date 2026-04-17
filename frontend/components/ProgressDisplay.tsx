@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import { TEST_OPTIONS } from "./TestSelector";
 
+const TOTAL_TESTS = 6;
+
 interface Event {
   type: string;
   test?: string;
@@ -55,21 +57,24 @@ export default function ProgressDisplay({ events, showColdStart, onCancel }: Pro
 
   const testResults: Record<string, string> = {};
   let currentTest = "";
-  let totalTests = 0;
-  let completedTests = 0;
+  let currentTestName = "";
+  let startedCount = 0;
+  let isDone = false;
 
   for (const ev of typed) {
     if (ev.type === "test_start") {
+      startedCount++;
       currentTest = ev.test ?? "";
-      totalTests = ev.total ?? totalTests;
+      currentTestName = ev.test_name ?? TEST_NAME[currentTest] ?? currentTest;
     }
-    if (ev.type === "test_complete") completedTests++;
+    if (ev.type === "done") isDone = true;
     if (ev.type === "result" && ev.test) {
       testResults[ev.test] = (ev.data?.result as string) ?? "unknown";
     }
   }
 
-  const progress = totalTests > 0 ? (completedTests / totalTests) * 100 : 0;
+  const isIndeterminate = startedCount === 0 && !isDone;
+  const pct = isDone ? 100 : Math.min(100, (startedCount / TOTAL_TESTS) * 100);
 
   return (
     <div className="space-y-6">
@@ -97,28 +102,60 @@ export default function ProgressDisplay({ events, showColdStart, onCancel }: Pro
           </button>
         </div>
 
-        {totalTests > 0 && (
-          <div className="mt-2">
-            <div
-              className="flex justify-between text-xs mb-1"
-              style={{ color: "var(--muted)" }}
-            >
-              <span>
-                {completedTests} / {totalTests} tests complete
-              </span>
-              <span style={{ color: "var(--lime)" }}>{Math.round(progress)}%</span>
-            </div>
-            <div
-              className="w-full h-1.5 rounded-full overflow-hidden"
-              style={{ background: "var(--surface2)" }}
-            >
-              <div
-                className="h-1.5 rounded-full transition-all duration-500"
-                style={{ width: `${progress}%`, background: "var(--lime)" }}
-              />
-            </div>
+        {/* ── Progress bar — two phases ── */}
+        <style>{`
+          @keyframes indeterminate-slide {
+            0%   { transform: translateX(-150%); }
+            100% { transform: translateX(550%);  }
+          }
+          .bar-indeterminate {
+            animation: indeterminate-slide 1.6s ease-in-out infinite;
+          }
+        `}</style>
+        <div className="mt-3">
+          {/* Label row */}
+          <div className="flex justify-between text-xs mb-1.5" style={{ color: "var(--muted)" }}>
+            <span>
+              {isIndeterminate
+                ? "Waiting for first test…"
+                : isDone
+                ? "All tests complete"
+                : `Test ${startedCount} of ${TOTAL_TESTS}`}
+            </span>
+            {!isIndeterminate && (
+              <span style={{ color: "var(--lime)" }}>{Math.round(pct)}%</span>
+            )}
           </div>
-        )}
+
+          {/* Track */}
+          <div
+            className="w-full h-2 rounded-full overflow-hidden"
+            style={{ background: "var(--surface2)" }}
+          >
+            {isIndeterminate ? (
+              /* Phase 1 — indeterminate shimmer */
+              <div className="h-full w-full relative">
+                <div
+                  className="bar-indeterminate absolute h-full w-1/3 rounded-full"
+                  style={{ background: "linear-gradient(90deg, transparent, rgba(204,255,0,0.5), var(--lime), rgba(204,255,0,0.5), transparent)" }}
+                />
+              </div>
+            ) : (
+              /* Phase 2 — determinate fill */
+              <div
+                className="h-full rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${pct}%`, background: "var(--lime)" }}
+              />
+            )}
+          </div>
+
+          {/* Current test name */}
+          {!isIndeterminate && currentTestName && !isDone && (
+            <p className="text-xs mt-1.5 truncate" style={{ color: "var(--lime)", opacity: 0.75 }}>
+              ▶ {currentTestName}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* ── Cold-start notice ── */}
