@@ -189,7 +189,7 @@ export default function ResultsDashboard({
 }) {
   const r = report as unknown as Report;
   const [expandedTest, setExpandedTest] = useState<string | null>(null);
-  const [copyLabel, setCopyLabel] = useState("Copy link");
+  const [copied, setCopied] = useState(false);
   const status = STATUS_STYLE[r.overall_status] ?? STATUS_STYLE.issues_found;
 
   function downloadJson() {
@@ -228,8 +228,8 @@ export default function ResultsDashboard({
     if (!jobId) return;
     const link = `${window.location.origin}/?job=${jobId}`;
     navigator.clipboard.writeText(link).then(() => {
-      setCopyLabel("Copied!");
-      setTimeout(() => setCopyLabel("Copy link"), 2000);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     });
   }
 
@@ -292,8 +292,16 @@ export default function ResultsDashboard({
           ))}
         </div>
 
-        {/* Downloads */}
-        <div className="flex gap-3 mt-5">
+        {/* Downloads + Share */}
+        <style>{`
+          @keyframes copy-flash {
+            0%   { background: rgba(204,255,0,0.12); border-color: rgba(204,255,0,0.35); transform: scale(1); }
+            18%  { background: rgba(204,255,0,0.32); border-color: rgba(204,255,0,0.8);  transform: scale(1.06); }
+            100% { background: rgba(204,255,0,0.12); border-color: rgba(204,255,0,0.35); transform: scale(1); }
+          }
+          .copy-flash { animation: copy-flash 0.45s ease-out forwards; }
+        `}</style>
+        <div className="flex items-center gap-2 mt-5 flex-wrap">
           {[
             { label: "Download JSON", fn: downloadJson },
             { label: "Download CSV",  fn: downloadCsv },
@@ -314,13 +322,36 @@ export default function ResultsDashboard({
           >
             Download PDF
           </button>
+
+          {/* Share button — visually separated from downloads, right-justified */}
           <button
             onClick={copyPermalink}
-            title="Link is session-scoped — valid while the backend container is alive"
-            className="text-xs rounded-lg px-3 py-1.5 transition-opacity hover:opacity-80"
-            style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)" }}
+            key={copied ? "copied" : "idle"}
+            className={`ml-auto flex items-center gap-1.5 text-xs font-semibold rounded-lg px-3.5 py-1.5 ${copied ? "copy-flash" : "transition-colors hover:bg-[rgba(204,255,0,0.18)]"}`}
+            style={{
+              background: "rgba(204,255,0,0.12)",
+              border: "1px solid rgba(204,255,0,0.35)",
+              color: "var(--lime)",
+            }}
           >
-            {copyLabel}
+            {copied ? (
+              <>
+                {/* Checkmark */}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                Copied!
+              </>
+            ) : (
+              <>
+                {/* Chain link */}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+                Share results
+              </>
+            )}
           </button>
         </div>
       </div>
