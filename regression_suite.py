@@ -1,0 +1,255 @@
+#!/usr/bin/env python3
+"""
+PointCheck Regression Suite
+============================
+Runs a fixed set of test cases against the staging (or prod) backend and
+asserts known expected outcomes. All cases run concurrently.
+
+Test cases
+----------
+  W3C WAI BAD demo  — ground-truth broken page; must produce failures
+  discord.com        — must return page_error (bot block / robots.txt)
+  medium.com         — must return page_error (bot block / robots.txt)
+
+Usage
+-----
+  python regression_suite.py              # staging (default)
+  python regression_suite.py --prod       # production
+
+Exit codes
+----------
+  0  all assertions passed
+  1  one or more assertions failed
+"""
+
+import argparse
+import asyncio
+import json
+import sys
+import time
+import urllib.request
+
+import websockets
+
+# ── Environment ───────────────────────────────────────────────────────────────
+
+STAGING_URL = "https://brendanworks-staging--wcag-tester-web.modal.run"
+PROD_URL    = "https://brendanworks--wcag-tester-web.modal.run"
+
+# ── Test case definitions ─────────────────────────────────────────────────────
+
+CASES = [
+    {
+        # W3C WAI BAD site returns 403 to Modal's datacenter IPs.
+        # GDS Audit page (GitHub Pages) has no IP blocking and contains
+        # every common accessibility failure by design — used as ground truth.
+        "label":       "GDS Accessibility Audit page (ground-truth broken page)",
+        "url":         "https://alphagov.github.io/accessibility-tool-audit/test-cases.html",
+        "tests":       ["keyboard_nav", "color_blindness", "focus_indicator",
+                        "form_errors", "page_structure"],
+        "wcag":        "2.1",
+        "assertions": [
+            # Must reach the page — no bot block
+            ("no_page_error",   "page_error event must NOT fire"),
+            # Must actually scan at least 1 page
+            ("pages_scanned",   "pages_scanned must be >= 1"),
+            # Known broken page: at least one test must fail
+            ("has_failures",    "at least one test must be FAIL (known broken page)"),
+            # Narrative must be generated (OLMo-3 runs)
+            ("has_narrative",   "OLMo-3 narrative must be present"),
+        ],
+    },
+    {
+        "label":   "discord.com (bot-blocked / robots.txt)",
+        "url":     "https://discord.com",
+        "tests":   ["page_structure"],
+        "wcag":    "2.1",
+        "assertions": [
+            # Must be blocked — page_error must fire
+            ("page_error_fired", "page_error event must fire"),
+            # No pages should have been scanned
+            ("zero_pages",       "pages_scanned must be 0"),
+        ],
+    },
+    {
+        "label":   "medium.com (bot-blocked / robots.txt)",
+        "url":     "https://medium.com",
+        "tests":   ["page_structure"],
+        "wcag":    "2.1",
+        "assertions": [
+            ("page_error_fired", "page_error event must fire"),
+            ("zero_pages",       "pages_scanned must be 0"),
+        ],
+    },
+]
+
+# ── HTTP helper ───────────────────────────────────────────────────────────────
+
+def post_json(url: str, payload: dict) -> dict:
+    data = json.dumps(payload).encode()
+    req  = urllib.request.Request(
+        url, data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read())
+
+# ── Single-case runner ────────────────────────────────────────────────────────
+
+async def run_case(base_url: str, case: dict) -> dict:
+    """Run one test case, collect events, return result dict."""
+    label = case["label"]
+    ws_base = base_url.replace("https://", "wss://")
+
+    # Kick off scan
+    resp = post_json(
+        f"{base_url}/api/run",
+        {
+            "url":          case["url"],
+            "tests":        case["tests"],
+            "task":         "Navigate and use the main features of this website",
+            "wcag_version": case["wcag"],
+        },
+    )
+    run_id = resp.get("run_id") or resp.get("job_id")
+    if not run_id:
+        return {"label": label, "error": f"No run_id in response: {resp}", "events": []}
+
+    # Stream WebSocket
+    ws_url = f"{ws_base}/ws/{run_id}"
+    events       = []
+    page_errors  = []
+    report       = {}
+    t0 = time.time()
+
+    try:
+        async with websockets.connect(ws_url, open_timeout=30, ping_timeout=60) as ws:
+            while True:
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=360)
+                except asyncio.TimeoutError:
+                    events.append({"type": "timeout"})
+                    break
+                msg = json.loads(raw)
+                events.append(msg)
+
+                if msg.get("type") == "page_error":
+                    page_errors.append(msg.get("error") or msg.get("message", ""))
+
+                if msg.get("type") in ("done", "error"):
+                    report = msg.get("report", {})
+                    break
+    except Exception as exc:
+        return {"label": label, "error": str(exc), "events": events}
+
+    return {
+        "label":       label,
+        "elapsed":     round(time.time() - t0),
+        "events":      events,
+        "page_errors": page_errors,
+        "report":      report,
+    }
+
+# ── Assertion evaluator ───────────────────────────────────────────────────────
+
+def evaluate(case: dict, result: dict) -> list[dict]:
+    """Return list of {assertion, description, passed, detail}."""
+    outcomes = []
+    report      = result.get("report", {})
+    page_errors = result.get("page_errors", [])
+    summary     = report.get("summary", {})
+    pages_scanned = report.get("pages_scanned", 0)
+    narrative   = report.get("narrative", "") or ""
+    failed      = summary.get("failed", 0)
+    passed      = summary.get("passed", 0)
+
+    for assertion, description in case["assertions"]:
+        detail = ""
+        if assertion == "no_page_error":
+            ok = len(page_errors) == 0
+            detail = f"got page_error: {page_errors[0][:80]}" if page_errors else ""
+        elif assertion == "page_error_fired":
+            ok = len(page_errors) > 0
+            detail = page_errors[0][:80] if page_errors else "no page_error received"
+        elif assertion == "pages_scanned":
+            ok = pages_scanned >= 1
+            detail = f"pages_scanned={pages_scanned}"
+        elif assertion == "zero_pages":
+            ok = pages_scanned == 0
+            detail = f"pages_scanned={pages_scanned}"
+        elif assertion == "has_failures":
+            ok = failed >= 1
+            detail = f"passed={passed} failed={failed}"
+        elif assertion == "has_narrative":
+            ok = len(narrative) > 50
+            detail = f"narrative length={len(narrative)}"
+        else:
+            ok = False
+            detail = f"unknown assertion: {assertion}"
+
+        outcomes.append({
+            "assertion":   assertion,
+            "description": description,
+            "passed":      ok,
+            "detail":      detail,
+        })
+    return outcomes
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+async def main(base_url: str):
+    print(f"\n{'═'*64}")
+    print(f"  PointCheck Regression Suite")
+    print(f"  Backend : {base_url}")
+    print(f"  Cases   : {len(CASES)}")
+    print(f"{'═'*64}\n")
+
+    # Run all cases concurrently
+    tasks   = [run_case(base_url, c) for c in CASES]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    all_passed = True
+
+    for case, result in zip(CASES, results):
+        label = case["label"]
+        print(f"\n── {label}")
+
+        if isinstance(result, Exception):
+            print(f"   ✗ EXCEPTION: {result}")
+            all_passed = False
+            continue
+
+        if result.get("error"):
+            print(f"   ✗ ERROR: {result['error']}")
+            all_passed = False
+            continue
+
+        print(f"   elapsed: {result.get('elapsed', '?')}s")
+
+        outcomes = evaluate(case, result)
+        for o in outcomes:
+            icon = "✓" if o["passed"] else "✗"
+            line = f"   {icon} {o['description']}"
+            if o["detail"]:
+                line += f"  [{o['detail']}]"
+            print(line)
+            if not o["passed"]:
+                all_passed = False
+
+    print(f"\n{'═'*64}")
+    if all_passed:
+        print("  ✓  ALL ASSERTIONS PASSED")
+    else:
+        print("  ✗  ONE OR MORE ASSERTIONS FAILED")
+    print(f"{'═'*64}\n")
+
+    return 0 if all_passed else 1
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--prod", action="store_true", help="Run against production")
+    args = parser.parse_args()
+    base = PROD_URL if args.prod else STAGING_URL
+    sys.exit(asyncio.run(main(base)))
