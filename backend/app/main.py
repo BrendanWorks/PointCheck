@@ -234,31 +234,39 @@ async def ws_crawl(ws: WebSocket, job_id: str):
             if _torch.cuda.is_available():
                 _torch.cuda.synchronize()
                 _torch.cuda.empty_cache()
-            await send({"type": "status", "message": "Visual checks done. Loading OLMo-3-7B for narrative..."})
-
             # ── Phase 2: OLMo-3-7B bfloat16 (~14 GB) ────────────────────────
-            # 4-bit NF4 is NOT used — bitsandbytes tries to overwrite a
-            # read-only property in OLMo-3's architecture → "property of
-            # Olmo3Model object has no setter".  bfloat16 fits on the A100
-            # (~14 GB) with ~28 GB of freed VRAM available after Phase 1.
-            # Wrapped in try/except — if OLMo fails to load (e.g. fragmented
-            # VRAM on a warm container), we still deliver a complete report
-            # with the visual check results. The narrative is best-effort.
+            # Skip entirely if no pages were scanned — there is nothing to
+            # summarise and loading a 14 GB model to say "no results" wastes
+            # ~60 s and produces a misleading narrative.
             narrative = ""
-            try:
-                narrator = await loop.run_in_executor(None, OLMo3Narrator)
-                narrative = await narrator.generate_narrative(
-                    all_results=job.page_results,
-                    site_url=job.url,
-                    pages_scanned=job.pages_scanned,
-                )
-                del narrator
-                if _torch.cuda.is_available():
-                    _torch.cuda.empty_cache()
-            except Exception as _olmo_err:
-                import traceback as _tb
-                print(f"[OLMo3] Load/generate failed (non-fatal): {_olmo_err}\n{_tb.format_exc()}")
-                await send({"type": "status", "message": "Narrative generation unavailable — delivering visual results."})
+            if job.pages_scanned == 0:
+                await send({
+                    "type": "status",
+                    "message": "No pages were scanned — skipping narrative generation.",
+                })
+            else:
+                await send({"type": "status", "message": "Visual checks done. Loading OLMo-3-7B for narrative..."})
+                # 4-bit NF4 is NOT used — bitsandbytes tries to overwrite a
+                # read-only property in OLMo-3's architecture → "property of
+                # Olmo3Model object has no setter".  bfloat16 fits on the A100
+                # (~14 GB) with ~28 GB of freed VRAM available after Phase 1.
+                # Wrapped in try/except — if OLMo fails to load (e.g. fragmented
+                # VRAM on a warm container), we still deliver a complete report
+                # with the visual check results. The narrative is best-effort.
+                try:
+                    narrator = await loop.run_in_executor(None, OLMo3Narrator)
+                    narrative = await narrator.generate_narrative(
+                        all_results=job.page_results,
+                        site_url=job.url,
+                        pages_scanned=job.pages_scanned,
+                    )
+                    del narrator
+                    if _torch.cuda.is_available():
+                        _torch.cuda.empty_cache()
+                except Exception as _olmo_err:
+                    import traceback as _tb
+                    print(f"[OLMo3] Load/generate failed (non-fatal): {_olmo_err}\n{_tb.format_exc()}")
+                    await send({"type": "status", "message": "Narrative generation unavailable — delivering visual results."})
             job.narrative = narrative
 
             # ── Final report ──────────────────────────────────────────────────
