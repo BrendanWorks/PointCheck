@@ -121,10 +121,12 @@ const ORANGE:   RGB = [255, 120, 0];
 const TEAL:     RGB = [110, 231, 183]; // high confidence
 
 // Confidence tier colors: [fg, bg, border]
+// low.bg raised from [25,18,0] to [40,28,0] — was nearly identical to PDF bg [26,26,27],
+// making the badge invisible. Labels use plain text (no ASCII prefixes).
 const CONF_COLORS: Record<ConfidenceTier, { fg: RGB; bg: RGB; bd: RGB; label: string }> = {
-  high:   { fg: TEAL,   bg: [15, 40, 25],  bd: [40, 90, 60],  label: "* high" },
-  medium: { fg: MUTED,  bg: SURFACE2,      bd: BORDER,         label: "~ med"  },
-  low:    { fg: AMBER,  bg: [25, 18, 0],   bd: [70, 50, 0],    label: "o low"  },
+  high:   { fg: TEAL,   bg: [15, 40, 25],  bd: [40, 90, 60],  label: "High" },
+  medium: { fg: MUTED,  bg: SURFACE2,      bd: BORDER,         label: "Med"  },
+  low:    { fg: AMBER,  bg: [40, 28, 0],   bd: [85, 60, 0],    label: "Low"  },
 };
 
 // Status badge colors

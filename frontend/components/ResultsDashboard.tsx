@@ -111,12 +111,17 @@ interface Report {
 
 // ── Severity styling (Axe/WCAG impact scale) ──────────────────────────────────
 const SEVERITY_STYLE: Record<string, { bg: string; color: string; border: string }> = {
-  critical: { bg: "rgba(255,40,90,0.18)",   color: "#FF2255",  border: "rgba(255,40,90,0.45)" },
-  serious:  { bg: "rgba(255,100,0,0.18)",   color: "#FF6600",  border: "rgba(255,100,0,0.45)" },
+  // Colors verified ≥4.5:1 contrast against effective bg (alpha-composited onto #202022).
+  // Critical #FF6680 on rgba(255,40,90,0.18)+#202022 = 4.88:1 ✓
+  // Serious  #FF8040 on rgba(255,100,0,0.18)+#202022 = 5.09:1 ✓
+  // Moderate #FFB800 on rgba(255,184,0,0.18)+#202022 = 6.31:1 ✓
+  // Minor    #C0C0C0 on rgba(160,160,160,0.14)+#202022 = 7.02:1 ✓
+  critical: { bg: "rgba(255,40,90,0.18)",   color: "#FF6680",  border: "rgba(255,40,90,0.45)" },
+  serious:  { bg: "rgba(255,100,0,0.18)",   color: "#FF8040",  border: "rgba(255,100,0,0.45)" },
   moderate: { bg: "rgba(255,184,0,0.18)",   color: "#FFB800",  border: "rgba(255,184,0,0.45)" },
   minor:    { bg: "rgba(160,160,160,0.14)", color: "#C0C0C0",  border: "rgba(160,160,160,0.4)" },
   // legacy alias — old persisted jobs with severity="major" still render
-  major:    { bg: "rgba(255,100,0,0.18)",   color: "#FF6600",  border: "rgba(255,100,0,0.45)" },
+  major:    { bg: "rgba(255,100,0,0.18)",   color: "#FF8040",  border: "rgba(255,100,0,0.45)" },
 };
 
 const RESULT_STYLE: Record<string, { bg: string; color: string; border: string }> = {
