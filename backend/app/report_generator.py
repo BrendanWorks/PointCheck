@@ -89,12 +89,41 @@ def _top_criteria(results: list[dict], n: int = 5) -> list[dict]:
     ]
 
 
+def _summarize_inference_stats(stats: list[dict]) -> dict:
+    """
+    Collapse a list of per-call inference stat dicts into aggregated totals,
+    plus a per-model breakdown for the UI.
+    """
+    if not stats:
+        return {}
+    total_latency  = sum(s.get("latency_ms", 0) for s in stats)
+    total_input    = sum(s.get("input_tokens", 0) for s in stats)
+    total_output   = sum(s.get("output_tokens", 0) for s in stats)
+    by_model: dict[str, dict] = {}
+    for s in stats:
+        m = s.get("model", "unknown")
+        if m not in by_model:
+            by_model[m] = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "latency_ms": 0}
+        by_model[m]["calls"]        += 1
+        by_model[m]["input_tokens"] += s.get("input_tokens", 0)
+        by_model[m]["output_tokens"] += s.get("output_tokens", 0)
+        by_model[m]["latency_ms"]   += s.get("latency_ms", 0)
+    return {
+        "total_calls":        len(stats),
+        "total_latency_ms":   total_latency,
+        "total_input_tokens": total_input,
+        "total_output_tokens": total_output,
+        "by_model":           by_model,
+    }
+
+
 def build_page_report(
     page_url: str,
     depth: int,
     results: list[dict],
     tests_run: list[str],
     screenshot_path: str | None = None,
+    inference_stats: list[dict] | None = None,
 ) -> dict[str, Any]:
     """
     Build a single-page sub-report. Mirrors the existing PointCheck report
@@ -166,6 +195,7 @@ def build_page_report(
         "all_failures":     all_raw_failures,
         "raw_results":      results,
         "screenshot_path":  screenshot_path,
+        "inference_metadata": _summarize_inference_stats(inference_stats or []),
     }
 
 
@@ -176,6 +206,7 @@ def build_site_report(
     narrative: str,
     page_reports: list[dict[str, Any]],
     tests_run: list[str],
+    olmo_inference_stats: dict | None = None,
 ) -> dict[str, Any]:
     """
     Aggregate per-page reports into a site-wide report.
@@ -250,6 +281,22 @@ def build_site_report(
         key=lambda r: SEVERITY_ORDER.get(r.get("severity", "minor"), 3),
     )
 
+    # Aggregate inference stats: sum across all page-level stats + OLMo-3 narrative call
+    all_page_stats: list[dict] = []
+    for pr in page_reports:
+        meta = pr.get("inference_metadata", {})
+        for model_name, model_data in meta.get("by_model", {}).items():
+            for _ in range(model_data.get("calls", 0)):
+                all_page_stats.append({
+                    "model": model_name,
+                    "input_tokens":  model_data["input_tokens"] // max(model_data["calls"], 1),
+                    "output_tokens": model_data["output_tokens"] // max(model_data["calls"], 1),
+                    "latency_ms":    model_data["latency_ms"] // max(model_data["calls"], 1),
+                })
+    if olmo_inference_stats:
+        all_page_stats.append(olmo_inference_stats)
+    site_inference_meta = _summarize_inference_stats(all_page_stats)
+
     return {
         # ── Backward-compatible single-page fields ─────────────────────────
         "job_id":              job_id,
@@ -274,6 +321,8 @@ def build_site_report(
         "raw_results":      all_results,
         # ── Additive multi-page field ──────────────────────────────────────
         "pages": page_reports,
+        # ── Inference performance metadata ────────────────────────────────
+        "inference_metadata": site_inference_meta,
     }
 
 

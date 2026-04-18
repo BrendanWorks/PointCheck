@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -83,6 +84,7 @@ class OLMo3Narrator:
         self.model = self.model.to(self.device)
         self.model.eval()
         print("[OLMo3] Ready")
+        self.last_inference_stats: dict | None = None
 
     async def generate_narrative(
         self,
@@ -149,7 +151,9 @@ class OLMo3Narrator:
                 messages, tokenize=False, add_generation_prompt=True
             )
             inputs = self.tokenizer(formatted, return_tensors="pt").to(self.device)
+            input_len = inputs["input_ids"].shape[1]
 
+            _t0 = time.perf_counter()
             with torch.inference_mode():
                 outputs = self.model.generate(
                     **inputs,
@@ -158,11 +162,20 @@ class OLMo3Narrator:
                     temperature=0.7,
                     top_p=0.9,
                 )
+            _latency_ms = round((time.perf_counter() - _t0) * 1000)
 
-            new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+            new_tokens = outputs[0][input_len:]
             narrative = self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
             narrative = self._strip_hallucinated_criteria(narrative)
-            print(f"[OLMo3] Narrative: {len(narrative)} chars")
+            print(f"[OLMo3] Narrative: {len(narrative)} chars, "
+                  f"{input_len} input tokens, {len(new_tokens)} output tokens, "
+                  f"{_latency_ms} ms")
+            self.last_inference_stats = {
+                "model": "olmo-3-7b",
+                "input_tokens": int(input_len),
+                "output_tokens": int(len(new_tokens)),
+                "latency_ms": _latency_ms,
+            }
             return narrative
 
         except Exception as e:

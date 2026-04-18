@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import gc
 import re
+import time
 from io import BytesIO
 import base64
 from pathlib import Path
@@ -242,6 +243,7 @@ class MolmoQAAnalyzer:
             )
 
         print(f"[MolmoQAAnalyzer] Ready ({device})")
+        self.inference_stats: list[dict] = []
 
     def _generate(
         self,
@@ -278,6 +280,7 @@ class MolmoQAAnalyzer:
             # Molmo-7B-D-0924 uses generate_from_batch (its own remote-code API),
             # not the standard GenerationMixin.generate.  Fall back to generate
             # only if generate_from_batch is absent (shouldn't happen with this model).
+            _t0 = time.perf_counter()
             with torch.inference_mode():
                 if hasattr(self.model, "generate_from_batch"):
                     from transformers import GenerationConfig, GenerationMixin
@@ -317,8 +320,15 @@ class MolmoQAAnalyzer:
                         no_repeat_ngram_size=3,
                         logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
                     )
+            _latency_ms = round((time.perf_counter() - _t0) * 1000)
 
             new_tokens = outputs[0][input_len:]
+            self.inference_stats.append({
+                "model": "molmo-7b-d",
+                "input_tokens": int(input_len),
+                "output_tokens": int(len(new_tokens)),
+                "latency_ms": _latency_ms,
+            })
             return self.processor.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
         except Exception as e:
@@ -550,6 +560,7 @@ class MolmoWebAnalyzer:
         # loaded in 4-bit NF4 (~4 GB) alongside MolmoWeb-8B (~16 GB) to handle
         # all screenshot QA tasks. Total VRAM: ~20 GB on A10G (24 GB).
         self.qa_analyzer = MolmoQAAnalyzer(device=self.device)
+        self.inference_stats: list[dict] = []
 
     # ── Device helpers ────────────────────────────────────────────────────────
 
@@ -558,6 +569,19 @@ class MolmoWebAnalyzer:
         if tensor.is_floating_point():
             return tensor.to(self.device, dtype=self.model_dtype)
         return tensor.to(self.device)
+
+    # ── Inference stats ───────────────────────────────────────────────────────
+
+    def get_all_inference_stats(self) -> list[dict]:
+        """
+        Return and clear accumulated inference stats from both MolmoWeb-8B
+        (self.inference_stats) and Molmo-7B-D QA (self.qa_analyzer.inference_stats).
+        Call once per page scan to get per-page stats without double-counting.
+        """
+        stats = self.qa_analyzer.inference_stats + self.inference_stats
+        self.qa_analyzer.inference_stats = []
+        self.inference_stats = []
+        return stats
 
     # ── Public async API ──────────────────────────────────────────────────────
 
@@ -709,10 +733,18 @@ class MolmoWebAnalyzer:
                 gen_kwargs["temperature"] = temperature
                 gen_kwargs["top_p"] = 0.9
 
+            _t0 = time.perf_counter()
             with torch.inference_mode():
                 outputs = self.model.generate(**inputs, **gen_kwargs)
+            _latency_ms = round((time.perf_counter() - _t0) * 1000)
 
             new_tokens = outputs[0][input_len:]
+            self.inference_stats.append({
+                "model": "molmo-web-8b",
+                "input_tokens": int(input_len),
+                "output_tokens": int(len(new_tokens)),
+                "latency_ms": _latency_ms,
+            })
             return self.processor.decode(new_tokens, skip_special_tokens=True).strip()
 
         except Exception as e:

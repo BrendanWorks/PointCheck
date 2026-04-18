@@ -73,6 +73,21 @@ interface CriteriaFailure {
   failure_count: number;
 }
 
+interface InferenceModelStats {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  latency_ms: number;
+}
+
+interface InferenceMetadata {
+  total_calls: number;
+  total_latency_ms: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  by_model: Record<string, InferenceModelStats>;
+}
+
 interface Report {
   run_id: string;
   job_id?: string;
@@ -91,6 +106,7 @@ interface Report {
   };
   top_criteria_failures: CriteriaFailure[];
   test_summaries: TestSummary[];
+  inference_metadata?: InferenceMetadata;
 }
 
 // ── Severity styling (Axe/WCAG impact scale) ──────────────────────────────────
@@ -768,6 +784,60 @@ export default function ResultsDashboard({
           );
         })}
       </div>
+
+      {/* ── Inference performance metadata ── */}
+      {r.inference_metadata && r.inference_metadata.total_calls > 0 && (
+        <div style={card} className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--muted)" }}>
+              Model Inference
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-4 text-xs mb-3">
+            <div>
+              <span style={{ color: "var(--muted)" }}>Total latency </span>
+              <span className="font-semibold tabular-nums" style={{ color: "var(--text)" }}>
+                {(r.inference_metadata.total_latency_ms / 1000).toFixed(1)}s
+              </span>
+            </div>
+            <div>
+              <span style={{ color: "var(--muted)" }}>Input tokens </span>
+              <span className="font-semibold tabular-nums" style={{ color: "var(--text)" }}>
+                {r.inference_metadata.total_input_tokens.toLocaleString()}
+              </span>
+            </div>
+            <div>
+              <span style={{ color: "var(--muted)" }}>Output tokens </span>
+              <span className="font-semibold tabular-nums" style={{ color: "var(--text)" }}>
+                {r.inference_metadata.total_output_tokens.toLocaleString()}
+              </span>
+            </div>
+            <div>
+              <span style={{ color: "var(--muted)" }}>Calls </span>
+              <span className="font-semibold tabular-nums" style={{ color: "var(--text)" }}>
+                {r.inference_metadata.total_calls}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(r.inference_metadata.by_model).map(([model, stats]) => (
+              <div
+                key={model}
+                className="text-xs rounded px-2 py-1"
+                style={{ background: "var(--surface2)", color: "var(--muted)", border: "1px solid var(--border)" }}
+              >
+                <span className="font-mono font-semibold" style={{ color: "var(--text)" }}>{model}</span>
+                {" · "}
+                {stats.calls} call{stats.calls !== 1 ? "s" : ""}
+                {" · "}
+                {(stats.latency_ms / 1000).toFixed(1)}s
+                {" · "}
+                {stats.input_tokens.toLocaleString()} in / {stats.output_tokens.toLocaleString()} out
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Disclaimer ── */}
       <p className="text-xs text-center py-2" style={{ color: "var(--muted)", opacity: 0.6 }}>

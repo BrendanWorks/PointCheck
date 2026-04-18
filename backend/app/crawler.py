@@ -707,11 +707,15 @@ async def _scan_page(
         video_findings=video_findings,
     )
 
+    # Collect per-page inference stats and clear the accumulator for the next page
+    page_inference_stats = analyzer.get_all_inference_stats()
+
     page_report = build_page_report(
         page_url=page_url,
         depth=depth,
         results=merged_results,
         tests_run=tests_to_run,
+        inference_stats=page_inference_stats,
     )
     yield {"type": "page_done", "url": page_url, "page_report": page_report}
 

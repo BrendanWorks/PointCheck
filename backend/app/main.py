@@ -284,6 +284,7 @@ async def ws_crawl(ws: WebSocket, job_id: str):
             # summarise and loading a 14 GB model to say "no results" wastes
             # ~60 s and produces a misleading narrative.
             narrative = ""
+            olmo_inference_stats: dict | None = None
             if job.pages_scanned == 0:
                 await send({
                     "type": "status",
@@ -305,6 +306,7 @@ async def ws_crawl(ws: WebSocket, job_id: str):
                         site_url=job.url,
                         pages_scanned=job.pages_scanned,
                     )
+                    olmo_inference_stats = narrator.last_inference_stats
                     del narrator
                     if _torch.cuda.is_available():
                         _torch.cuda.empty_cache()
@@ -322,6 +324,7 @@ async def ws_crawl(ws: WebSocket, job_id: str):
                 narrative=narrative,
                 page_reports=page_reports,
                 tests_run=job.tests,
+                olmo_inference_stats=olmo_inference_stats,
             )
             job.report = report
             job.status = "complete"
