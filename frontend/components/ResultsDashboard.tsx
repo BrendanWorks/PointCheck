@@ -220,15 +220,21 @@ function InferenceInfoTooltip() {
         onMouseLeave={() => setOpen(false)}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
-        className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[10px] font-bold cursor-default select-none flex-shrink-0"
-        style={{ color: "var(--muted)", border: "1px solid var(--border)", lineHeight: 1, background: "transparent" }}
+        className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold cursor-default select-none flex-shrink-0"
+        style={{
+          color: "var(--muted)",
+          border: "1.5px solid var(--muted)",
+          lineHeight: 1,
+          background: "transparent",
+          fontFamily: "inherit",
+        }}
       >
         i
       </button>
       {open && (
         <span
           role="tooltip"
-          className="absolute bottom-full left-1/2 z-[9999] mb-2 w-72 -translate-x-1/2 rounded-lg px-3 py-2.5 text-xs leading-relaxed shadow-xl"
+          className="absolute left-full top-1/2 z-[9999] ml-2 w-72 -translate-y-1/2 rounded-lg px-3 py-2.5 text-xs leading-relaxed shadow-xl"
           style={{
             background: "var(--surface2)",
             border: "1px solid var(--border)",
