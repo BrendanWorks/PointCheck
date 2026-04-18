@@ -139,7 +139,7 @@ class FocusIndicatorTest(BaseWCAGTest):
                         f"(outline: {focus_info.get('outlineStyle','none')}, "
                         f"box-shadow: {focus_info.get('boxShadow','none')[:30]})"
                     ),
-                    "wcag_criteria": ["2.4.7"], "severity": "major",
+                    "wcag_criteria": ["2.4.7"], "severity": "serious",
                     "recommendation": (
                         "Add :focus { outline: 2px solid #005fcc; outline-offset: 2px; } "
                         "or a visible box-shadow. Never use outline:none without an alternative."
@@ -230,7 +230,7 @@ class FocusIndicatorTest(BaseWCAGTest):
                             f"CSS reports focus indicator ({indicator_desc}) on {el_desc}, "
                             "but MolmoWeb could not see a visible focus outline or highlight."
                         ),
-                        "wcag_criteria": ["2.4.7"], "severity": "major",
+                        "wcag_criteria": ["2.4.7"], "severity": "serious",
                         "recommendation": (
                             "Ensure focus indicator has at least 3:1 contrast against adjacent "
                             "colors and is at least 2px thick."
@@ -256,7 +256,7 @@ class FocusIndicatorTest(BaseWCAGTest):
                             "but MolmoWeb returned an uninterpretable response — "
                             "cannot visually confirm. Falling back to CSS signal."
                         ),
-                        "wcag_criteria": ["2.4.7"], "severity": "minor",
+                        "wcag_criteria": ["2.4.7"], "severity": "moderate",
                         "recommendation": (
                             "Ensure focus indicator has at least 3:1 contrast against adjacent "
                             "colors and is at least 2px thick."

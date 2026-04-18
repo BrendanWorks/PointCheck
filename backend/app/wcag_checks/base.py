@@ -27,7 +27,7 @@ class TestResult:
     test_name: str
     result: str              # "pass" | "fail" | "warning" | "error"
     wcag_criteria: list[str]
-    severity: str            # "critical" | "major" | "minor"
+    severity: str            # "critical" | "serious" | "moderate" | "minor"
     failure_reason: str = ""
     recommendation: str = ""
     screenshot_path: Optional[str] = None
@@ -44,7 +44,7 @@ class BaseWCAGTest:
     TEST_ID: str = ""
     TEST_NAME: str = ""
     WCAG_CRITERIA: list[str] = []
-    DEFAULT_SEVERITY: str = "major"
+    DEFAULT_SEVERITY: str = "serious"
 
     # Visual WCAG question sent to MolmoWeb-8B after programmatic checks.
     # Subclasses override this to get a visual analysis layer on top.

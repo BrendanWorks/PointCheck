@@ -61,7 +61,7 @@ MOTION_JS = """
     }
     if (videosWithoutControls.length > 0 && videosWithoutControls.some(v => !v.autoplay)) {
         issues.push({
-            criterion: '2.2.2', severity: 'minor',
+            criterion: '2.2.2', severity: 'moderate',
             description: `${videosWithoutControls.length} video(s) have no browser controls. Users may not be able to pause playback.`,
             fix: 'Add the controls attribute to all <video> elements, or implement custom accessible play/pause controls.',
         });
@@ -116,7 +116,7 @@ MOTION_JS = """
     });
     if (animatedGifs.length > 0) {
         issues.push({
-            criterion: '2.2.2', severity: 'minor',
+            criterion: '2.2.2', severity: 'moderate',
             description: `${animatedGifs.length} GIF image(s) found. Animated GIFs cannot be paused by users.`,
             examples: animatedGifs.slice(0,3).map(img => (img.getAttribute('src')||'').split('/').pop().slice(0,40)),
             fix: 'Replace animated GIFs with videos (which can be paused) or add prefers-reduced-motion CSS. Avoid GIFs that flash more than 3 times/sec (WCAG 2.3.1).',
@@ -136,7 +136,7 @@ MOTION_JS = """
     }).slice(0, 5);
     if (animatedEls.length > 0) {
         issues.push({
-            criterion: '2.2.2', severity: 'minor',
+            criterion: '2.2.2', severity: 'moderate',
             description: `${animatedEls.length} element(s) have infinite CSS animations. Users with vestibular disorders may be harmed.`,
             examples: animatedEls.map(el => {
                 const label = (el.getAttribute('aria-label')||el.id||el.className||'').trim().slice(0,40);
@@ -233,10 +233,11 @@ class VideoMotionTest(BaseWCAGTest):
         severity_order = {"critical": 0, "serious": 1, "moderate": 2, "minor": 3}
         issues.sort(key=lambda i: severity_order.get(i.get("severity", "minor"), 3))
 
-        criticals = [i for i in issues if i.get("severity") == "critical"]
-        seriouses = [i for i in issues if i.get("severity") == "serious"]
+        criticals  = [i for i in issues if i.get("severity") == "critical"]
+        seriouses  = [i for i in issues if i.get("severity") == "serious"]
+        moderates  = [i for i in issues if i.get("severity") == "moderate"]
 
-        overall_severity = "critical" if criticals else ("serious" if seriouses else "minor")
+        overall_severity = "critical" if criticals else ("serious" if seriouses else ("moderate" if moderates else "minor"))
         overall_result   = "fail" if (criticals or seriouses) else "warning"
 
         top = issues[:3]

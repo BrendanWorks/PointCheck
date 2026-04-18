@@ -191,7 +191,7 @@ class FormErrorTest(BaseWCAGTest):
 
             if not has_aria and not has_alerts and not has_keywords:
                 failures.append({
-                    "criteria": ["3.3.1"], "severity": "major",
+                    "criteria": ["3.3.1"], "severity": "serious",
                     "reason": "No error messages detected after submitting invalid data.",
                     "rec": (
                         "Add aria-invalid='true' to invalid fields, "
@@ -201,7 +201,7 @@ class FormErrorTest(BaseWCAGTest):
                 })
             elif not has_aria:
                 failures.append({
-                    "criteria": ["3.3.1"], "severity": "major",
+                    "criteria": ["3.3.1"], "severity": "serious",
                     "reason": "Errors shown visually but not programmatically (no aria-invalid on fields).",
                     "rec": (
                         "Add aria-invalid='true' and aria-describedby pointing to the error "

@@ -42,7 +42,18 @@ WCAG_CRITERIA_LABELS: dict[str, str] = {
     "4.1.2": "Name, Role, Value",
 }
 
-SEVERITY_ORDER = {"critical": 0, "serious": 1, "moderate": 2, "minor": 3, "warning": 4}
+SEVERITY_ORDER = {"critical": 0, "serious": 1, "major": 1, "moderate": 2, "minor": 3, "warning": 4}
+
+# Map legacy severity labels to the canonical Axe/WCAG 4-level scale.
+# "major" was used in early PointCheck builds; persisted jobs may still carry it.
+_SEVERITY_NORMALIZE: dict[str, str] = {
+    "major": "serious",
+}
+
+
+def _normalize_severity(sev: str) -> str:
+    """Return the canonical severity label, mapping any legacy values."""
+    return _SEVERITY_NORMALIZE.get(sev, sev)
 
 TEST_LABELS: dict[str, str] = {
     "keyboard_nav":    "Keyboard-Only Navigation",
@@ -135,6 +146,15 @@ def build_page_report(
     """
     # Build test_summaries first — one entry per test_id in tests_run,
     # picking the programmatic result (results are ordered programmatic-first).
+    # Normalize legacy severity labels before building summaries
+    for r in results:
+        if "severity" in r:
+            r["severity"] = _normalize_severity(r["severity"])
+        if "details" in r and isinstance(r["details"], dict):
+            for issue in r["details"].get("issues", []):
+                if "severity" in issue:
+                    issue["severity"] = _normalize_severity(issue["severity"])
+
     test_summaries = []
     for test_id in tests_run:
         r = next((x for x in results if x.get("test_id") == test_id), None)
