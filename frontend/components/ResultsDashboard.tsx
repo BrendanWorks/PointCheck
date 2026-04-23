@@ -129,6 +129,7 @@ const RESULT_STYLE: Record<string, { bg: string; color: string; border: string }
   fail:    { bg: "rgba(255,51,102,0.08)", color: "var(--crimson)", border: "rgba(255,51,102,0.25)" },
   warning: { bg: "rgba(255,184,0,0.08)", color: "var(--amber)",   border: "rgba(255,184,0,0.25)" },
   error:   { bg: "rgba(255,120,0,0.08)", color: "#FF7800",        border: "rgba(255,120,0,0.25)" },
+  unknown: { bg: "rgba(156,163,175,0.08)", color: "#9CA3AF",      border: "rgba(156,163,175,0.25)" },
 };
 
 const RESULT_ICON: Record<string, string> = {
@@ -523,7 +524,7 @@ export default function ResultsDashboard({
           </div>
         </div>
         {r.test_summaries?.map((ts) => {
-          const rs = RESULT_STYLE[ts.result] ?? RESULT_STYLE.warning;
+          const rs = RESULT_STYLE[knownResults.has(ts.result) ? ts.result : "unknown"];
           const expanded = expandedTest === ts.test_id;
           const tier = getConfidenceTier(ts);
           const cs = CONFIDENCE_STYLE[tier];
@@ -542,7 +543,7 @@ export default function ResultsDashboard({
                   className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
                   style={{ background: rs.bg, border: `1px solid ${rs.border}`, color: rs.color }}
                 >
-                  {knownResults.has(ts.result) ? RESULT_ICON[ts.result] : "−"}
+                  {knownResults.has(ts.result) ? RESULT_ICON[ts.result] : "⊘"}
                 </span>
                 <span className="flex-1 font-medium text-sm" style={{ color: "var(--text)" }}>
                   {ts.test_name}
@@ -867,7 +868,7 @@ export default function ResultsDashboard({
                   {!ts.failure_reason && !ts.recommendation && !(ts.wcag_criteria?.length > 0) &&
                    !(ts.screenshot_b64 || ts.screenshot_path) &&
                    ts.result === "pass" && (
-                    <p className="text-sm" style={{ color: "var(--muted)" }}>No issues found.</p>
+                    <p className="text-sm" style={{ color: "var(--muted)" }}>No violations detected by this check.</p>
                   )}
                 </div>
               )}
