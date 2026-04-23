@@ -588,11 +588,42 @@ export default function ResultsDashboard({
                   {ts.failure_reason && (
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-widest mb-1.5" style={{ color: "var(--muted)" }}>
-                        Failure
+                        {ts.result === "warning" ? "Notice" : "Failure"}
                       </p>
                       <p style={{ color: "var(--text)" }}>{ts.failure_reason}</p>
                     </div>
                   )}
+                  {ts.result === "warning" && (() => {
+                    const d = ts.details ?? {};
+                    let method: string | null = null;
+                    if (ts.test_id === "focus_indicator") {
+                      const tabs = d.tabs_tested ?? (d.steps as unknown[])?.length ?? 0;
+                      method = d.molmo2_used
+                        ? `AI visual inspection of ${tabs} element${tabs !== 1 ? "s" : ""}`
+                        : `CSS analysis of ${tabs} element${tabs !== 1 ? "s" : ""} — visual confirmation unavailable`;
+                    } else if (ts.test_id === "keyboard_nav") {
+                      const steps = (d.steps as unknown[])?.length ?? 0;
+                      method = steps > 0
+                        ? `Keyboard navigation tested across ${steps} element${steps !== 1 ? "s" : ""}`
+                        : "Static code analysis only";
+                    } else if (ts.test_id === "form_errors") {
+                      method = "No forms found — check skipped for this page";
+                    } else if (ts.test_id === "color_blindness") {
+                      method = "Algorithmic contrast analysis — edge cases possible";
+                    } else if (ts.test_id === "video_motion") {
+                      method = "DOM media scan + visual inspection";
+                    }
+                    return method ? (
+                      <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs"
+                        style={{ background: "rgba(255,184,0,0.06)", border: "1px solid rgba(255,184,0,0.18)" }}>
+                        <span style={{ color: "var(--amber)", flexShrink: 0 }}>⚠</span>
+                        <span style={{ color: "var(--muted)" }}>
+                          <span className="font-semibold" style={{ color: "var(--text)" }}>Needs manual review. </span>
+                          {method}.
+                        </span>
+                      </div>
+                    ) : null;
+                  })()}
                   {ts.recommendation && (
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-widest mb-1.5" style={{ color: "var(--muted)" }}>
