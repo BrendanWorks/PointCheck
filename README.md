@@ -214,6 +214,43 @@ Lighthouse and Axe work by parsing the DOM and applying static rules — they re
 
 ---
 
+## Eval Pipeline
+
+PointCheck uses a multi-layer evaluation pipeline to measure and regression-test the accuracy of its own detections. Results from the latest run are in [`eval_results.md`](eval_results.md).
+
+### Regression assertions
+
+Four test cases run sequentially against the staging backend on every deploy:
+
+| Case | Purpose | Key assertions |
+|---|---|---|
+| GDS Accessibility Audit page | Ground-truth broken page — every common WCAG failure by design | page_structure must FAIL; form_errors must FAIL or WARN; recall floor ≥ 2/5; severity ≥ serious |
+| discord.com | Robots.txt false-positive regression | pages_scanned ≥ 1 (must not be blocked at robots.txt stage) |
+| medium.com | Bot-blocked site | page_error must fire; pages_scanned = 0 |
+| GOV.UK Design System | Known-good page — false-positive rate check | No critical-severity failures |
+
+### LLM-as-judge
+
+After each GDS run, Claude (claude-haiku-4-5) grades the OLMo-3 executive summary on three dimensions:
+
+- **Accuracy** — does the narrative correctly describe the violations found, without hallucination?
+- **Completeness** — does it cover the most significant issues?
+- **Actionability** — does it give specific, useful remediation guidance?
+
+Scores are 1–5 per dimension. Average below 2.0 is a blocking failure. Current score: **2.3/5** (advisory warning — OLMo-3 produces a broken contrast ratio string and vague remediation copy; tracked for future prompt improvement).
+
+### Consistency eval
+
+`python3 regression_suite.py --consistency` runs `page_structure` twice on the GDS page and asserts the result is stable across independent model runs. Opt-in to keep the default suite within ~12 minutes (GPU constraint: cases run sequentially, each loading MolmoWeb-8B into the A100).
+
+```bash
+python3 regression_suite.py              # default: 4 cases, ~10 min
+python3 regression_suite.py --consistency   # +1 case, ~+150s
+python3 regression_suite.py --skip-judge    # skip LLM-as-judge if no API key
+```
+
+---
+
 ## WCAG Coverage
 
 | Principle | Criteria Tested |
@@ -269,8 +306,17 @@ Approximately **85–90% of WCAG 2.1 Level AA** success criteria are covered pro
 - Model info tooltip: `ⓘ` icon next to "MODEL INFERENCE" heading opens a right-side tooltip explaining each model's role and defining latency/tokens in plain English
 - **Regression suite benchmark invalidated:** discovered that the GDS Accessibility Audit page (`alphagov.github.io/…`), used as the "ground-truth broken page" in the regression suite, loads correctly from local IPs but GitHub Pages serves a fallback/status page to Modal's datacenter IPs — the `has_failures` assertion was passing against GitHub's own status page (which has a linked image with empty alt text), not the deliberately broken GDS test cases; W3C WAI BAD is also blocked at the network level from Modal IPs; a replacement benchmark that is genuinely reachable from datacenter IPs is needed
 
+### Sprint 4 — Eval Pipeline (Apr 21–25)
+- **Per-check recall assertions** — regression suite now asserts that specific known checks fire on the GDS ground-truth page: `page_structure` must be a hard FAIL, `form_errors` must be FAIL or WARN
+- **Recall floor** — at least 2/5 checks must produce a hard failure on any known-broken page; catches model drift that silently reduces detection rate
+- **Severity calibration** — asserts at least one failure reaches `serious` or `critical` severity on the GDS page; catches severity scale drift toward under-reporting
+- **False-positive rate case** — added GOV.UK Design System (one of the most rigorously accessibility-tested sites on the web) as a fourth regression case; asserts no critical-severity failures on a known-good page
+- **LLM-as-judge** — after each GDS run, Claude (claude-haiku-4-5) grades the OLMo-3 narrative on accuracy (3/5), completeness (2/5), and actionability (2/5); avg < 2.0 is a blocking failure; current score 2.3/5 (advisory warning — narrative produces a broken contrast ratio string and vague remediation copy)
+- **Consistency eval** — `--consistency` flag runs `page_structure` twice on the GDS page and asserts stable results across independent runs; opt-in to keep default suite within ~12 min
+- **`eval_results.md`** — latest passing run logged to repo with judge scores; 12/12 assertions pass
+- Resolved regression suite benchmark issue: GDS alphagov page (GitHub Pages) is reachable from Modal datacenter IPs; W3C WAI BAD was the only blocked site
+
 ### Backlog
-- **Regression suite benchmark replacement** — find a publicly accessible, deliberately broken accessibility page that loads correctly from Modal datacenter IPs (W3C WAI BAD and GDS alphagov both fail from datacenter); candidates: Deque University demo, axe-core's own test fixtures, or a self-hosted broken page
 - **Supabase migration** — move job store from Modal Dict to Supabase for proper relational history, user accounts, and analytics
 - **Scan history** — localStorage-backed list of recent scans with permalinks
 - **Re-run button** — "Scan again" resets form state without navigating away
