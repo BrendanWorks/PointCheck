@@ -17,6 +17,7 @@ Eval layers
 -----------
   Regression assertions  — per-case pass/fail checked every run
   LLM-as-judge           — Claude grades OLMo-3 narrative accuracy/completeness/actionability
+  Axe cross-tool check   — axe-core 4.9.1 run locally; PointCheck must not PASS where Axe finds violations
   Consistency eval        — opt-in via --consistency; doubles GDS scan to test variance
 
 Usage
@@ -25,6 +26,8 @@ Usage
   python regression_suite.py --prod                # production
   python regression_suite.py --consistency         # also run consistency eval (~+150s)
   python regression_suite.py --skip-judge          # skip LLM-as-judge (no API key)
+  python regression_suite.py --skip-axe            # skip Axe cross-tool check
+  python regression_suite.py --axe-python PATH     # path to python with playwright (default: backend/venv/bin/python3)
 
 Exit codes
 ----------
@@ -35,6 +38,8 @@ Exit codes
 import argparse
 import asyncio
 import json
+import os
+import subprocess
 import sys
 import time
 import urllib.request
@@ -418,6 +423,32 @@ def _extract_violations(report: dict) -> list[str]:
             violations.append(f"{name}: {reason[:80]}" if reason else name)
     return violations
 
+# ── Axe cross-tool baseline ───────────────────────────────────────────────────
+
+def run_axe_baseline(url: str, axe_python: str) -> dict:
+    """
+    Run axe_runner.py as a subprocess using the specified Python binary
+    (which must have playwright installed).  Returns the parsed JSON result,
+    or {"error": str} on failure.
+    """
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "axe_runner.py")
+    if not os.path.exists(script):
+        return {"error": f"axe_runner.py not found at {script}"}
+
+    try:
+        proc = subprocess.run(
+            [axe_python, script, url, "--json"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if proc.returncode != 0 and not proc.stdout.strip():
+            return {"error": proc.stderr.strip()[:200] or "axe_runner exited non-zero"}
+        return json.loads(proc.stdout)
+    except subprocess.TimeoutExpired:
+        return {"error": "axe_runner timed out after 60s"}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 # ── Consistency check ─────────────────────────────────────────────────────────
 
 def check_consistency(
@@ -497,7 +528,13 @@ def print_case_result(case: dict, result, all_passed_ref: list[bool]) -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-async def main(base_url: str, run_consistency: bool, skip_judge: bool) -> int:
+async def main(
+    base_url: str,
+    run_consistency: bool,
+    skip_judge: bool,
+    skip_axe: bool,
+    axe_python: str,
+) -> int:
     cases = list(CASES)
     if run_consistency:
         cases.append(CONSISTENCY_CASE)
@@ -507,8 +544,26 @@ async def main(base_url: str, run_consistency: bool, skip_judge: bool) -> int:
     print(f"  Backend     : {base_url}")
     print(f"  Cases       : {len(cases)}")
     print(f"  LLM judge   : {'disabled (--skip-judge)' if skip_judge else 'enabled'}")
+    print(f"  Axe cross-tool : {'disabled (--skip-axe)' if skip_axe else 'enabled'}")
     print(f"  Consistency : {'enabled (--consistency)' if run_consistency else 'disabled'}")
     print(f"{'═'*64}\n")
+
+    # ── Axe baseline (runs locally, fast; kick off before GPU cases) ───────────
+    axe_gds: dict = {}
+    if not skip_axe:
+        gds_url = CASES[0]["url"]
+        print(f"── Axe cross-tool baseline (axe-core 4.9.1 local, GDS page)")
+        axe_gds = run_axe_baseline(gds_url, axe_python)
+        if axe_gds.get("error"):
+            print(f"   ⚠️  axe baseline error: {axe_gds['error']} (non-blocking)")
+        else:
+            mapped = sum(len(v) for v in axe_gds.get("by_pointcheck", {}).values())
+            print(
+                f"   axe found {axe_gds['total_violations']} violations, "
+                f"{mapped} mapped to PointCheck checks: "
+                f"{list(axe_gds.get('by_pointcheck', {}).keys())}"
+            )
+        print()
 
     # Run cases SEQUENTIALLY — each scan needs the full A100 (40 GB VRAM) to
     # itself.  Running concurrently causes 3 × 16 GB model loads → OOM on the
@@ -571,6 +626,44 @@ async def main(base_url: str, run_consistency: bool, skip_judge: bool) -> int:
         else:
             print("   skipped — GDS case failed or did not run")
 
+    # ── Axe cross-tool comparison ──────────────────────────────────────────
+    print(f"\n── Axe cross-tool: PointCheck recall vs axe-core baseline (GDS page)")
+    if skip_axe:
+        print("   skipped (--skip-axe)")
+    elif axe_gds.get("error"):
+        print(f"   skipped — axe baseline failed: {axe_gds['error']}")
+    else:
+        gds_result = next(
+            (r for r in results
+             if isinstance(r, dict) and "GDS Accessibility Audit" in r.get("label", "")),
+            None,
+        )
+        if not gds_result or gds_result.get("error"):
+            print("   skipped — GDS PointCheck case failed or did not run")
+        else:
+            by_pc = axe_gds.get("by_pointcheck", {})
+            if not by_pc:
+                print("   ⚠️  axe found no violations that map to PointCheck checks")
+            else:
+                for check_id, axe_rules in sorted(by_pc.items()):
+                    ts = _test_summary(gds_result["report"], check_id)
+                    pc_result = ts.get("result") if ts else "not_run"
+                    if pc_result == "pass":
+                        # PointCheck passed a check where Axe found violations —
+                        # this is a false negative worth flagging.
+                        icon = "✗"
+                        all_passed[0] = False
+                        print(
+                            f"   {icon} {check_id}: PointCheck={pc_result} but "
+                            f"axe found {len(axe_rules)} violation(s): {axe_rules}"
+                        )
+                    else:
+                        icon = "✓"
+                        print(
+                            f"   {icon} {check_id}: PointCheck={pc_result} "
+                            f"(axe rules: {axe_rules})"
+                        )
+
     # ── Consistency eval ───────────────────────────────────────────────────
     if run_consistency:
         print(f"\n── Consistency eval: page_structure result stability")
@@ -612,12 +705,23 @@ async def main(base_url: str, run_consistency: bool, skip_judge: bool) -> int:
 
 
 if __name__ == "__main__":
+    _default_axe_python = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "backend", "venv", "bin", "python3",
+    )
     parser = argparse.ArgumentParser()
     parser.add_argument("--prod",        action="store_true", help="Run against production")
     parser.add_argument("--consistency", action="store_true",
                         help="Also run consistency eval (~+150s, doubles GDS scan)")
     parser.add_argument("--skip-judge",  action="store_true",
                         help="Skip LLM-as-judge (use when ANTHROPIC_API_KEY is unavailable)")
-    args   = parser.parse_args()
-    base   = PROD_URL if args.prod else STAGING_URL
-    sys.exit(asyncio.run(main(base, args.consistency, args.skip_judge)))
+    parser.add_argument("--skip-axe",    action="store_true",
+                        help="Skip Axe cross-tool check")
+    parser.add_argument("--axe-python",  default=_default_axe_python,
+                        help="Path to Python binary with playwright installed "
+                             f"(default: {_default_axe_python})")
+    args = parser.parse_args()
+    base = PROD_URL if args.prod else STAGING_URL
+    sys.exit(asyncio.run(main(
+        base, args.consistency, args.skip_judge, args.skip_axe, args.axe_python,
+    )))
