@@ -4,7 +4,6 @@ MolmoAccess Agent — FastAPI backend
 Endpoints:
   POST /api/crawl              Create a crawl job, return job_id
   GET  /api/crawl/{job_id}     Get job status / completed report
-  GET  /api/crawls             List all jobs (summary)
   WS   /ws/crawl/{job_id}      Stream live progress events
   GET  /health                 Liveness check
 
@@ -37,12 +36,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 import uuid
+from collections import defaultdict, deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -52,15 +53,26 @@ from app.models.olmo3 import OLMo3Narrator
 from app.crawler import SiteCrawler
 from app.eval_logger import EvalLogger
 from app.report_generator import build_site_report, strip_b64
+from app.url_guard import url_block_reason
 
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="MolmoAccess Agent", version="1.0.0")
 
+# Browser origins allowed to call the API. curl / server-side callers bypass
+# CORS entirely — the rate limiter below is the actual abuse control; this
+# just stops third-party webpages from triggering GPU scans via visitors'
+# browsers.
+ALLOWED_ORIGINS = [
+    "https://pointcheck.org",
+    "https://www.pointcheck.org",
+    "http://localhost:3000",   # local frontend dev
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,6 +85,47 @@ app.mount("/screenshots", StaticFiles(directory=str(SCREENSHOTS_DIR)), name="scr
 
 # In-memory job store — tracks active + recently completed jobs within this container.
 _jobs: dict[str, CrawlJobState] = {}
+
+# ── Per-IP rate limiting ──────────────────────────────────────────────────────
+# Each scan costs minutes of A100 time, so job creation is rate-limited.
+# In-memory and per-container (Modal may run several containers), so this is
+# burst control per IP, not a global cap — the hard spend ceiling is
+# max_containers in modal_app.py.
+# Sized so the 6-case regression suite plus a manual retry fits in one window.
+_RATE_LIMIT_MAX_SCANS = 8
+_RATE_LIMIT_WINDOW_S = 600
+_rate_buckets: dict[str, deque] = defaultdict(deque)
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_rate_limit(request: Request) -> None:
+    """Raise 429 if this IP has created too many jobs in the current window."""
+    ip = _client_ip(request)
+    now = time.monotonic()
+    bucket = _rate_buckets[ip]
+    while bucket and now - bucket[0] > _RATE_LIMIT_WINDOW_S:
+        bucket.popleft()
+    if len(bucket) >= _RATE_LIMIT_MAX_SCANS:
+        raise HTTPException(
+            429,
+            f"Rate limit exceeded — max {_RATE_LIMIT_MAX_SCANS} scans per "
+            f"{_RATE_LIMIT_WINDOW_S // 60} minutes. Please try again later.",
+        )
+    bucket.append(now)
+    # Drop stale IP buckets so the map can't grow unbounded in a warm container
+    if len(_rate_buckets) > 1000:
+        stale = [
+            k for k, v in _rate_buckets.items()
+            if not v or now - v[-1] > _RATE_LIMIT_WINDOW_S
+        ]
+        for k in stale:
+            del _rate_buckets[k]
 
 # Serialise scans so only one model-load phase runs at a time.
 _scan_lock = asyncio.Lock()
@@ -125,7 +178,17 @@ async def health():
 
 
 @app.post("/api/crawl", response_model=CrawlResponse)
-async def create_crawl(req: CrawlRequest):
+async def create_crawl(req: CrawlRequest, request: Request):
+    _enforce_rate_limit(request)
+
+    # SSRF guard — refuse URLs that resolve to private/internal addresses.
+    # getaddrinfo blocks on DNS, so run it off the event loop.
+    block_reason = await asyncio.get_event_loop().run_in_executor(
+        None, url_block_reason, req.url
+    )
+    if block_reason:
+        raise HTTPException(400, f"URL refused: {block_reason}")
+
     job_id = str(uuid.uuid4())
     _jobs[job_id] = CrawlJobState(
         job_id=job_id,
@@ -156,20 +219,6 @@ async def get_crawl(job_id: str):
         except KeyError:
             pass
     raise HTTPException(404, "Job not found")
-
-
-@app.get("/api/crawls")
-async def list_crawls():
-    return [
-        {
-            "job_id":        j.job_id,
-            "url":           j.url,
-            "status":        j.status,
-            "created_at":    j.created_at,
-            "pages_scanned": j.pages_scanned,
-        }
-        for j in _jobs.values()
-    ]
 
 
 # ── WebSocket endpoint ─────────────────────────────────────────────────────────
@@ -362,8 +411,6 @@ async def ws_crawl(ws: WebSocket, job_id: str):
 # Accepts the old /api/run shape so the existing frontend still works
 # while the new /api/crawl + /ws/crawl endpoints are being wired up.
 
-from fastapi import Request
-
 @app.post("/api/run")
 async def legacy_run(request: Request):
     """
@@ -379,7 +426,7 @@ async def legacy_run(request: Request):
         max_depth=0,
         tests=body.get("tests", ALL_TESTS),
     )
-    resp = await create_crawl(crawl_req)
+    resp = await create_crawl(crawl_req, request)
     return {"run_id": resp.job_id, "message": resp.message}
 
 

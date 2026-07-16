@@ -46,6 +46,9 @@ image = (
     image=image,
     gpu="A100-40GB",
     timeout=900,
+    # Hard spend ceiling: at most 2 A100 containers, no matter the request
+    # volume. Per-IP rate limiting in app/main.py handles burst control.
+    max_containers=2,
     env={
         "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
         # Persistent job store — Modal Dict name for permalink support.

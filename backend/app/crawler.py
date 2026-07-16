@@ -384,8 +384,12 @@ def _skip_url(url: str) -> bool:
     return f".{ext}" in _SKIP_EXTENSIONS
 
 
-async def _extract_links(page: Page, base_url: str) -> list[str]:
-    """Return all same-origin, non-skippable href links found on the page."""
+async def _extract_links(page: Page, page_url: str, origin_url: str) -> list[str]:
+    """
+    Return all same-origin, non-skippable href links found on the page.
+    Relative hrefs are resolved against `page_url` (the page they appear on);
+    the same-origin check is anchored to `origin_url` (the crawl start URL).
+    """
     hrefs: list[str] = await page.evaluate("""() => {
         return Array.from(document.querySelectorAll('a[href]'))
             .map(a => a.getAttribute('href'))
@@ -394,9 +398,9 @@ async def _extract_links(page: Page, base_url: str) -> list[str]:
     }""")
     links = []
     for href in hrefs:
-        absolute = urljoin(base_url, href)
+        absolute = urljoin(page_url, href)
         normalized = _normalize_url(absolute)
-        if _same_origin(normalized, base_url) and not _skip_url(normalized):
+        if _same_origin(normalized, origin_url) and not _skip_url(normalized):
             links.append(normalized)
     return list(dict.fromkeys(links))  # deduplicate while preserving order
 
@@ -842,7 +846,9 @@ class SiteCrawler:
                         await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
                         await asyncio.sleep(0.5)
                         await _dismiss_overlays(page)
-                        links = await _extract_links(page, self.start_url)
+                        # page.url (not url) — resolves relative hrefs correctly
+                        # after any redirect the page performed.
+                        links = await _extract_links(page, page.url, self.start_url)
                         new_links = [
                             lnk for lnk in links
                             if lnk not in visited
