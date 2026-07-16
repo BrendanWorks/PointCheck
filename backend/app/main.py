@@ -19,17 +19,15 @@ WebSocket event types emitted (backward-compatible with PointCheck v1 frontend):
   done            — final report (screenshot_b64 stripped)
   error           — fatal error
 
-Two-phase sequential model residency on Modal A100-40GB (42.4 GB VRAM):
-  Phase 1 (visual checks):
-    MolmoWeb-8B  bfloat16  ~16 GB  — pointing + agent navigation
-    MolmoQA-7B   4-bit NF4  ~4 GB  — screenshot description QA
-    Total Phase 1: ~20 GB, leaving ~22 GB headroom.
-    OLMo is NOT loaded during Phase 1.
+Model residency on Modal A100-40GB (42.4 GB VRAM):
+  MolmoWeb-8B  bfloat16  ~16 GB  — pointing + agent navigation
+  MolmoQA-7B   4-bit NF4  ~4 GB  — screenshot description QA
+  Both load once per container (module-level cache) and stay resident
+  (~20 GB, ~22 GB headroom) — warm scans skip the 60-90 s load entirely.
 
-  Phase 2 (narrative):
-    MolmoWeb + MolmoQA freed (gc.collect + cuda.empty_cache + synchronize).
-    OLMo-3-7B  bfloat16  ~14 GB  — executive summary narrative.
-    Fits comfortably with ~28 GB free after Phase 1 teardown.
+  OLMo-3-7B (narrative) is NEVER loaded in this container. It runs in the
+  separate `narrate` Modal function (see modal_app.py) on its own
+  scale-to-zero GPU, invoked remotely after the visual checks finish.
 """
 
 from __future__ import annotations
@@ -49,7 +47,6 @@ from fastapi.staticfiles import StaticFiles
 
 from app.schemas import CrawlRequest, CrawlResponse, CrawlJobState, ALL_TESTS
 from app.models.molmo2 import MolmoWebAnalyzer
-from app.models.olmo3 import OLMo3Narrator
 from app.crawler import SiteCrawler
 from app.eval_logger import EvalLogger
 from app.report_generator import build_site_report, strip_b64
@@ -130,8 +127,18 @@ def _enforce_rate_limit(request: Request) -> None:
 # Serialise scans so only one model-load phase runs at a time.
 _scan_lock = asyncio.Lock()
 
+# Module-level analyzer cache — MolmoWeb-8B + Molmo-7B-D QA (~20 GB) load once
+# per container and stay resident across scans. Only touched under _scan_lock.
+_analyzer: Optional[MolmoWebAnalyzer] = None
+
 # ── Persistent job store (Modal Dict) ─────────────────────────────────────────
-# Completed jobs are written here so permalinks survive container restarts.
+# Jobs are written here at every status transition (queued → running →
+# complete/error) for two reasons:
+#   1. Permalinks survive container restarts (completed jobs).
+#   2. Container affinity: Modal can route the POST /api/crawl and the
+#      follow-up WebSocket to DIFFERENT containers once it scales out. The WS
+#      handler hydrates queued jobs from this store when they aren't in local
+#      memory, so the scan starts regardless of which container got the POST.
 # Dict name is read from MODAL_JOBS_DICT env var; Modal's --env flag isolates
 # staging and prod into separate namespaces, so they never share state.
 # Falls back to no-op when running locally (modal package unavailable or no auth).
@@ -156,8 +163,8 @@ def _get_modal_store() -> Any | None:
     return _modal_store if _modal_store_ready else None
 
 
-def _persist_completed_job(job: CrawlJobState) -> None:
-    """Write a completed job to the persistent store. Fire-and-forget; never raises."""
+def _persist_job(job: CrawlJobState) -> None:
+    """Write a job's current state to the persistent store. Fire-and-forget; never raises."""
     store = _get_modal_store()
     if store is None:
         return
@@ -165,6 +172,20 @@ def _persist_completed_job(job: CrawlJobState) -> None:
         store[job.job_id] = job.model_dump()
     except Exception as exc:
         print(f"[jobs] Failed to persist job {job.job_id}: {exc}")
+
+
+def _hydrate_job(job_id: str) -> Optional[CrawlJobState]:
+    """Fetch a job from the persistent store (created on another container)."""
+    store = _get_modal_store()
+    if store is None:
+        return None
+    try:
+        return CrawlJobState(**store[job_id])
+    except KeyError:
+        return None
+    except Exception as exc:
+        print(f"[jobs] Failed to hydrate job {job_id}: {exc}")
+        return None
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────────
@@ -199,6 +220,9 @@ async def create_crawl(req: CrawlRequest, request: Request):
         tests=req.tests,
         created_at=datetime.utcnow().isoformat(),
     )
+    # Persist immediately so the WebSocket can pick this job up even if Modal
+    # routes it to a different container than the one that took this POST.
+    _persist_job(_jobs[job_id])
     return CrawlResponse(
         job_id=job_id,
         message="Job created. Connect to /ws/crawl/{job_id} to start.",
@@ -227,18 +251,27 @@ async def get_crawl(job_id: str):
 async def ws_crawl(ws: WebSocket, job_id: str):
     await ws.accept()
 
-    if job_id not in _jobs:
+    job = _jobs.get(job_id)
+    if job is None:
+        # The POST may have landed on a different container — check the store.
+        job = _hydrate_job(job_id)
+        if job is not None:
+            _jobs[job_id] = job
+
+    if job is None:
         await ws.send_json({"type": "error", "message": "Job not found"})
         await ws.close()
         return
 
-    job = _jobs[job_id]
     if job.status not in ("queued", "error"):
         await ws.send_json({"type": "error", "message": f"Job is already {job.status}"})
         await ws.close()
         return
 
     job.status = "running"
+    # Mark running in the store so a second WS to another container can't
+    # hydrate the same queued job and start a duplicate scan.
+    _persist_job(job)
 
     async def send(msg: dict) -> None:
         try:
@@ -274,13 +307,17 @@ async def ws_crawl(ws: WebSocket, job_id: str):
 
             loop = asyncio.get_event_loop()
 
-            # ── Phase 1: MolmoWeb-8B bfloat16 (~16 GB) ───────────────────────
-            # OLMo is NOT loaded. MolmoWeb alone fits in A10G 24 GB.
-            await send({"type": "status", "message": "Loading MolmoWeb-8B (visual analyzer)..."})
-            analyzer = await loop.run_in_executor(
-                None, lambda: MolmoWebAnalyzer(use_quantization=False)
-            )
-            await send({"type": "status", "message": "MolmoWeb-8B ready. Starting visual checks..."})
+            # ── Visual models: load once per container, reuse across scans ──
+            global _analyzer
+            if _analyzer is None:
+                await send({"type": "status", "message": "Loading MolmoWeb-8B (visual analyzer)..."})
+                _analyzer = await loop.run_in_executor(
+                    None, lambda: MolmoWebAnalyzer(use_quantization=False)
+                )
+                await send({"type": "status", "message": "MolmoWeb-8B ready. Starting visual checks..."})
+            else:
+                await send({"type": "status", "message": "MolmoWeb-8B already warm — starting visual checks..."})
+            analyzer = _analyzer
 
             job_screenshots = SCREENSHOTS_DIR / job_id
             job_screenshots.mkdir(exist_ok=True)
@@ -317,21 +354,20 @@ async def ws_crawl(ws: WebSocket, job_id: str):
 
             eval_logger.close()
 
-            # ── Free MolmoWeb, then load OLMo ────────────────────────────────
-            # Sequential residency — never both models in VRAM at once.
-            # gc.collect() must run before empty_cache() so Python finalizers
-            # release CUDA tensors; synchronize() drains pending CUDA ops.
-            del crawler, analyzer
+            # Free per-scan objects (browser/crawler state), but keep the
+            # analyzer resident for the next scan. empty_cache() releases
+            # activation memory back to the CUDA pool between scans.
+            del crawler
             import gc as _gc
             _gc.collect()
             import torch as _torch
             if _torch.cuda.is_available():
-                _torch.cuda.synchronize()
                 _torch.cuda.empty_cache()
-            # ── Phase 2: OLMo-3-7B bfloat16 (~14 GB) ────────────────────────
-            # Skip entirely if no pages were scanned — there is nothing to
-            # summarise and loading a 14 GB model to say "no results" wastes
-            # ~60 s and produces a misleading narrative.
+
+            # ── Narrative: remote OLMo-3 call (separate Modal function) ─────
+            # Runs on its own scale-to-zero GPU (see modal_app.py `narrate`)
+            # so this container never unloads MolmoWeb. Skip if no pages were
+            # scanned — a narrative over zero results is misleading.
             narrative = ""
             olmo_inference_stats: dict | None = None
             if job.pages_scanned == 0:
@@ -340,28 +376,24 @@ async def ws_crawl(ws: WebSocket, job_id: str):
                     "message": "No pages were scanned — skipping narrative generation.",
                 })
             else:
-                await send({"type": "status", "message": "Visual checks done. Loading OLMo-3-7B for narrative..."})
-                # 4-bit NF4 is NOT used — bitsandbytes tries to overwrite a
-                # read-only property in OLMo-3's architecture → "property of
-                # Olmo3Model object has no setter".  bfloat16 fits on the A100
-                # (~14 GB) with ~28 GB of freed VRAM available after Phase 1.
-                # Wrapped in try/except — if OLMo fails to load (e.g. fragmented
-                # VRAM on a warm container), we still deliver a complete report
-                # with the visual check results. The narrative is best-effort.
+                await send({"type": "status", "message": "Visual checks done. Generating OLMo-3 narrative..."})
+                # Best-effort — if the remote call fails we still deliver a
+                # complete report with the visual check results.
                 try:
-                    narrator = await loop.run_in_executor(None, OLMo3Narrator)
-                    narrative = await narrator.generate_narrative(
-                        all_results=job.page_results,
+                    import modal as _modal
+                    narrate_fn = _modal.Function.from_name("wcag-tester", "narrate")
+                    # Strip screenshots — the narrator only reads text fields,
+                    # and b64 payloads would bloat the remote call.
+                    narrate_result = await narrate_fn.remote.aio(
+                        all_results=strip_b64(job.page_results),
                         site_url=job.url,
                         pages_scanned=job.pages_scanned,
                     )
-                    olmo_inference_stats = narrator.last_inference_stats
-                    del narrator
-                    if _torch.cuda.is_available():
-                        _torch.cuda.empty_cache()
+                    narrative = narrate_result.get("narrative", "")
+                    olmo_inference_stats = narrate_result.get("stats")
                 except Exception as _olmo_err:
                     import traceback as _tb
-                    print(f"[OLMo3] Load/generate failed (non-fatal): {_olmo_err}\n{_tb.format_exc()}")
+                    print(f"[OLMo3] Remote narrate failed (non-fatal): {_olmo_err}\n{_tb.format_exc()}")
                     await send({"type": "status", "message": "Narrative generation unavailable — delivering visual results."})
             job.narrative = narrative
 
@@ -379,7 +411,7 @@ async def ws_crawl(ws: WebSocket, job_id: str):
             job.status = "complete"
             job.completed_at = datetime.utcnow().isoformat()
             # Persist to Modal Dict so this job is retrievable after container restarts
-            _persist_completed_job(job)
+            _persist_job(job)
             _ka_stop[0] = True
             keepalive_task.cancel()
             await send({"type": "done", "job_id": job_id, "report": strip_b64(report)})
@@ -388,6 +420,7 @@ async def ws_crawl(ws: WebSocket, job_id: str):
         _ka_stop[0] = True
         keepalive_task.cancel()
         job.status = "disconnected"
+        _persist_job(job)
     except Exception as e:
         _ka_stop[0] = True
         keepalive_task.cancel()
@@ -396,6 +429,7 @@ async def ws_crawl(ws: WebSocket, job_id: str):
         print(f"[WS error] job={job_id}\n{tb}")
         job.status = "error"
         job.error  = str(e)
+        _persist_job(job)
         try:
             await send({"type": "error", "message": str(e)})
         except Exception:

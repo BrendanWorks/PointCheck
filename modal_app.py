@@ -6,15 +6,24 @@ Three-model architecture:
   allenai/Molmo-7B-D-0924   — screenshot QA + holistic WCAG analysis (4-bit NF4, ~4 GB)
   allenai/OLMo-3-7B-Instruct — executive summary narrative (bfloat16, ~14 GB)
 
-Phase 1: MolmoWeb + MolmoQA co-resident during visual checks (~20 GB / 42.4 GB A100).
-Phase 2: Both freed → OLMo loaded for narrative (~14 GB), then freed.
-BFS site crawl via Playwright. GPU: A100-40GB.
+Function layout:
+  web      (A100-40GB) — FastAPI + WebSocket. MolmoWeb + MolmoQA load once per
+                         container and stay resident (~20 GB / 42.4 GB); warm
+                         scans skip the 60-90 s model load entirely.
+  narrate  (A10G)      — OLMo-3 executive summary on its own scale-to-zero GPU,
+                         called remotely by web, so the visual models are never
+                         unloaded to make room for it.
+BFS site crawl via Playwright.
 Entrypoint: backend/app/main.py (FastAPI + WebSocket streaming).
 """
 
 import modal
 
 app = modal.App("wcag-tester")
+
+# Container-level OLMo cache for the narrate function — persists across
+# .remote() calls while the container stays warm.
+_narrator = None
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -90,3 +99,36 @@ def web():
 
     from app.main import app as fastapi_app
     return fastapi_app
+
+
+@app.function(
+    image=image,
+    gpu="A10G",
+    timeout=300,
+    max_containers=2,
+    env={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
+)
+def narrate(all_results: list, site_url: str, pages_scanned: int) -> dict:
+    """
+    OLMo-3-7B executive-summary narrative, isolated on its own GPU so the
+    web container never unloads MolmoWeb between scans. OLMo-3 bf16 (~14 GB)
+    fits an A10G (24 GB). Callers must strip screenshot_b64 from all_results
+    first — the narrator only reads the text fields.
+
+    Returns {"narrative": str, "stats": dict | None}.
+    """
+    import asyncio
+    import sys
+    sys.path.insert(0, "/app")
+
+    global _narrator
+    if _narrator is None:
+        from app.models.olmo3 import OLMo3Narrator
+        _narrator = OLMo3Narrator()
+
+    narrative = asyncio.run(_narrator.generate_narrative(
+        all_results=all_results,
+        site_url=site_url,
+        pages_scanned=pages_scanned,
+    ))
+    return {"narrative": narrative, "stats": _narrator.last_inference_stats}
