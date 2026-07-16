@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import { Suspense } from "react";
 import "./globals.css";
 import { WcagVersionProvider } from "@/components/WcagVersionProvider";
 import HeaderVersion from "@/components/HeaderVersion";
 import GoogleAnalytics from "@/components/GoogleAnalytics";
+import CookieConsent, { CookiePrefsButton } from "@/components/CookieConsent";
 
 export const metadata: Metadata = {
   title: "PointCheck — WCAG 2.1 & 2.2 Accessibility Tester",
@@ -118,26 +118,36 @@ export default function RootLayout({
                 GitHub
               </a>
               <a
+                href="https://happypdf.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="footer-link"
+              >
+                happypdf
+              </a>
+              <a
+                href="https://molmo.allenai.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="footer-link"
+              >
+                Research
+              </a>
+              <a
                 href="mailto:brendanworks@gmail.com"
                 className="footer-link"
               >
                 Contact
               </a>
+              <CookiePrefsButton className="footer-link cursor-pointer" />
             </nav>
           </div>
         </footer>
         </WcagVersionProvider>
-        <Script
-          src="https://www.googletagmanager.com/gtag/js?id=G-W08D0QMLTJ"
-          strategy="afterInteractive"
-        />
-        <Script id="ga4-init" strategy="afterInteractive">{`
-          window.dataLayer = window.dataLayer || [];
-          window.gtag = function gtag(){ window.dataLayer.push(arguments); };
-          window.gtag('js', new Date());
-          window.gtag('config', 'G-W08D0QMLTJ');
-        `}</Script>
-        {/* SPA route-change page views — useSearchParams() needs Suspense */}
+        {/* GA4 is consent-gated: CookieConsent injects gtag only after an
+            explicit Accept. GoogleAnalytics (SPA route-change page views)
+            no-ops until gtag exists — useSearchParams() needs Suspense. */}
+        <CookieConsent measurementId="G-W08D0QMLTJ" />
         <Suspense fallback={null}>
           <GoogleAnalytics measurementId="G-W08D0QMLTJ" />
         </Suspense>
