@@ -26,11 +26,9 @@ from __future__ import annotations
 
 import asyncio
 import re
-import time
 import urllib.error
 import urllib.request
 from collections import deque
-from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 from urllib.parse import urljoin, urlparse

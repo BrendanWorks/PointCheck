@@ -25,7 +25,13 @@ jobs:
       # Torch-free: CI never installs the inference stack. The tested modules
       # (url_guard, schemas, report_generator, job_store) have no heavy deps.
       - name: Install test deps
-        run: pip install "pydantic>=2" pytest
+        run: pip install "pydantic>=2" pytest ruff
+
+      # Enforced pyflakes correctness rules (see ruff.toml). Scoped to the code
+      # that actually ships + the CI tests; dev scripts and the dead
+      # backend/tests/ copies are not linted.
+      - name: Lint (ruff)
+        run: ruff check backend/app backend/tests_ci modal_app.py
 
       # Catches the SyntaxError class that has broken prod before (per the
       # project's mandatory pre-deploy check).
@@ -64,12 +70,9 @@ jobs:
       - name: Install
         run: npm ci
 
-      # Advisory: current lint findings are Next.js style opinions (a<->Link,
-      # img<->Image) and an SSR-required setState-in-effect, not bugs. Surfaced
-      # here but non-blocking; flip to a hard gate once the backlog is cleared.
-      - name: Lint (advisory)
+      # Enforced (errors fail; warnings allowed, matching happypdf).
+      - name: Lint (eslint)
         run: npm run lint
-        continue-on-error: true
 
       - name: Type check
         run: npx tsc --noEmit

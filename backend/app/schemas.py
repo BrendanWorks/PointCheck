@@ -9,7 +9,7 @@ add a `pages` array on top.
 from __future__ import annotations
 
 from typing import Any, Optional
-from pydantic import BaseModel, HttpUrl, field_validator
+from pydantic import BaseModel, field_validator
 
 
 # ── Request ────────────────────────────────────────────────────────────────────

@@ -296,7 +296,7 @@ class MolmoQAAnalyzer:
             _t0 = time.perf_counter()
             with torch.inference_mode():
                 if hasattr(self.model, "generate_from_batch"):
-                    from transformers import GenerationConfig, GenerationMixin
+                    from transformers import GenerationConfig
                     # Build config then explicitly set use_cache — constructor arg is
                     # silently ignored in some Transformers 5.x builds because the field
                     # was moved to a sub-config; setattr always works.

@@ -10,7 +10,6 @@ Layer 2 (visual): MolmoWeb-8B describes heading hierarchy and landmark regions
 
 from __future__ import annotations
 
-import asyncio
 from typing import AsyncGenerator
 
 from app.wcag_checks.base import BaseWCAGTest, TestResult

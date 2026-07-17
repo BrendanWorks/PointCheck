@@ -58,6 +58,11 @@ export default function CookieConsent({ measurementId }: { measurementId: string
 
   useEffect(() => {
     const stored = localStorage.getItem(CONSENT_KEY) as Choice | null;
+    // Persisted consent can only be read after mount (SSR has no localStorage).
+    // A lazy useState initializer would read it during render and cause a
+    // hydration mismatch, so this deliberate post-mount setState is the
+    // SSR-safe pattern here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setChoice(stored ?? "unset");
     if (stored === "accepted") loadAnalytics(measurementId);
   }, [measurementId]);

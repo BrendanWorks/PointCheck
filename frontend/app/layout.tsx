@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 import "./globals.css";
 import { WcagVersionProvider } from "@/components/WcagVersionProvider";
@@ -43,7 +44,7 @@ export default function RootLayout({
           className="px-6 py-4 flex items-center justify-between"
           style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}
         >
-          <a href="/" className="flex items-center gap-3 no-underline">
+          <Link href="/" className="flex items-center gap-3 no-underline">
             <img
               src="/logo.svg"
               alt="PointCheck"
@@ -59,7 +60,7 @@ export default function RootLayout({
               </span>
               <HeaderVersion />
             </div>
-          </a>
+          </Link>
           <div className="flex flex-col items-end gap-1">
             <nav className="flex items-center gap-5 text-sm">
               <a href="/about" className="nav-link-muted">About</a>

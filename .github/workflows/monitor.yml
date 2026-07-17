@@ -1,0 +1,39 @@
+# Scheduled uptime monitor. GitHub emails the repo owner when a scheduled run
+# fails, so each check below doubles as an alert.
+#
+# Cost discipline — why this only probes the FRONTEND:
+# PointCheck's backend /health lives on the A100-backed `web` function (there
+# is no separate CPU container, unlike happypdf). Any HTTP hit to the Modal
+# endpoint cold-boots an A100, so probing it on a schedule would burn GPU time
+# every 30 min for no real gain. The backend's real validation is deploy.yml's
+# regression suite (run in maintenance windows) plus live user traffic. If
+# continuous backend monitoring is ever wanted, add a cheap CPU-only health
+# route on its own scale-to-zero function and probe that here.
+name: Monitor
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+env:
+  SITE: https://pointcheck.org
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Site serves the app
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 60 --retry 2 --retry-delay 10 "$SITE")
+          test "$code" = "200"
+          curl -s -m 60 "$SITE" | grep -qi 'pointcheck' || { echo "::error::unexpected page content"; exit 1; }
+
+      - name: Security headers still present
+        run: |
+          set -euo pipefail
+          H=$(curl -sI -m 60 --retry 2 --retry-delay 10 "$SITE")
+          echo "$H" | grep -qi 'content-security-policy' || { echo "::error::CSP header missing"; exit 1; }
+          echo "$H" | grep -qi 'x-frame-options' || { echo "::error::X-Frame-Options missing"; exit 1; }

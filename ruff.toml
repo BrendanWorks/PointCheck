@@ -1,0 +1,24 @@
+# Ruff config for CI (see .github/workflows/ci.yml).
+#
+# We enforce pyflakes correctness rules (F) — unused imports, undefined names,
+# redefinitions, f-string bugs — plus E9 syntax errors. This is the "catches
+# real problems" tier, deliberately lean:
+#
+#   - No pycodestyle style rules (E1/E2/E7) or line-length (E501): the model
+#     compat-patch code (models/molmo2.py, models/olmo3.py) uses compact
+#     `if cond: stmt` one-liners intentionally, and there is no existing
+#     formatter — enforcing style would mean reformatting fragile inference
+#     code for no correctness gain.
+#   - No formatter check (ruff format / black): the codebase has never been
+#     auto-formatted; enforcing it now would churn every file. Deferred.
+#   - F841 (assigned-but-unused locals) is excluded: the current findings in
+#     vision_analysis / form_errors / keyboard_nav look like latent bugs
+#     (e.g. a computed screenshot that is never attached) that need real
+#     investigation, not blind deletion. Tracked in the backlog.
+
+[lint]
+select = ["F", "E9"]
+ignore = ["F841"]
+
+# Real test suite lives here; the stale backend/tests/ copies are dead code.
+exclude = ["backend/tests/"]

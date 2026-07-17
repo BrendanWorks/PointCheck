@@ -62,7 +62,6 @@ const { version: wcagVersion, setVersion: setWcagVersion } = useWcagVersion();
         setError(err instanceof Error ? err.message : String(err));
         setPhase("done");
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

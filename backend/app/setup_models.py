@@ -10,7 +10,6 @@ This script is ONLY called by the Modal image build; it does not import
 app/ modules (avoids circular dependency at image build time).
 """
 
-import sys
 import torch
 
 

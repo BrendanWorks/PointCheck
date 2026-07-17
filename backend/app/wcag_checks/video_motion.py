@@ -20,7 +20,6 @@ WCAG criteria covered:
 
 from __future__ import annotations
 
-import asyncio
 from typing import AsyncGenerator
 
 from app.wcag_checks.base import BaseWCAGTest, TestResult
