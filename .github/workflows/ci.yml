@@ -1,0 +1,83 @@
+name: CI
+
+# Fast, cheap, deterministic checks. No Modal, no GPU, no deploy — safe to run
+# on every PR and every push to main. The expensive staging/prod regression
+# lives in deploy.yml (manual dispatch) because it costs real GPU time.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Torch-free: CI never installs the inference stack. The tested modules
+      # (url_guard, schemas, report_generator, job_store) have no heavy deps.
+      - name: Install test deps
+        run: pip install "pydantic>=2" pytest
+
+      # Catches the SyntaxError class that has broken prod before (per the
+      # project's mandatory pre-deploy check).
+      - name: Syntax check
+        run: |
+          python - <<'PY'
+          import ast, glob, sys
+          bad = 0
+          for f in glob.glob("backend/app/**/*.py", recursive=True) + ["modal_app.py"]:
+              try:
+                  ast.parse(open(f).read())
+              except SyntaxError as e:
+                  print(f"SyntaxError in {f}: {e}"); bad += 1
+          sys.exit(bad)
+          PY
+
+      # Locks in the security + integrity behaviour: SSRF guard, page cap,
+      # strip_b64 hygiene, rate limiter, job eviction.
+      - name: Unit tests
+        run: python -m pytest backend/tests_ci/ -v
+
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Advisory: current lint findings are Next.js style opinions (a<->Link,
+      # img<->Image) and an SSR-required setState-in-effect, not bugs. Surfaced
+      # here but non-blocking; flip to a hard gate once the backlog is cleared.
+      - name: Lint (advisory)
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      # postcss override keeps this at 0; fails the build if a high/critical
+      # vuln ever appears in a production dependency.
+      - name: Audit (prod deps)
+        run: npm audit --omit=dev --audit-level=high

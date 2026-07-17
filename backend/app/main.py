@@ -51,6 +51,14 @@ from app.crawler import SiteCrawler
 from app.eval_logger import EvalLogger
 from app.report_generator import build_site_report, strip_b64
 from app.url_guard import url_block_reason
+from app.job_store import (
+    RATE_LIMIT_MAX_SCANS,
+    RATE_LIMIT_WINDOW_S,
+    MAX_JOBS_IN_MEMORY,
+    TERMINAL_STATUSES,
+    rate_limit_allow,
+    select_evictable,
+)
 
 
 # ── App setup ─────────────────────────────────────────────────────────────────
@@ -87,10 +95,9 @@ _jobs: dict[str, CrawlJobState] = {}
 # Each scan costs minutes of A100 time, so job creation is rate-limited.
 # In-memory and per-container (Modal may run several containers), so this is
 # burst control per IP, not a global cap — the hard spend ceiling is
-# max_containers in modal_app.py.
+# max_containers in modal_app.py. Policy constants and the sliding-window
+# algorithm live in app.job_store (torch-free, unit-tested in CI).
 # Sized so the 6-case regression suite plus a manual retry fits in one window.
-_RATE_LIMIT_MAX_SCANS = 8
-_RATE_LIMIT_WINDOW_S = 600
 _rate_buckets: dict[str, deque] = defaultdict(deque)
 
 
@@ -103,23 +110,19 @@ def _client_ip(request: Request) -> str:
 
 def _enforce_rate_limit(request: Request) -> None:
     """Raise 429 if this IP has created too many jobs in the current window."""
-    ip = _client_ip(request)
     now = time.monotonic()
-    bucket = _rate_buckets[ip]
-    while bucket and now - bucket[0] > _RATE_LIMIT_WINDOW_S:
-        bucket.popleft()
-    if len(bucket) >= _RATE_LIMIT_MAX_SCANS:
+    bucket = _rate_buckets[_client_ip(request)]
+    if not rate_limit_allow(bucket, now, RATE_LIMIT_MAX_SCANS, RATE_LIMIT_WINDOW_S):
         raise HTTPException(
             429,
-            f"Rate limit exceeded — max {_RATE_LIMIT_MAX_SCANS} scans per "
-            f"{_RATE_LIMIT_WINDOW_S // 60} minutes. Please try again later.",
+            f"Rate limit exceeded — max {RATE_LIMIT_MAX_SCANS} scans per "
+            f"{RATE_LIMIT_WINDOW_S // 60} minutes. Please try again later.",
         )
-    bucket.append(now)
     # Drop stale IP buckets so the map can't grow unbounded in a warm container
     if len(_rate_buckets) > 1000:
         stale = [
             k for k, v in _rate_buckets.items()
-            if not v or now - v[-1] > _RATE_LIMIT_WINDOW_S
+            if not v or now - v[-1] > RATE_LIMIT_WINDOW_S
         ]
         for k in stale:
             del _rate_buckets[k]
@@ -165,12 +168,10 @@ def _get_modal_store() -> Any | None:
     return _modal_store if _modal_store_ready else None
 
 
-# Keep at most this many jobs in local memory. Terminal jobs beyond the cap
-# are evicted (they live in the Modal Dict, so get_crawl/hydrate still find
-# them); active jobs are never evicted. Bounds growth in warm containers,
-# which now live much longer since the visual models stay resident.
-_MAX_JOBS_IN_MEMORY = 50
-_TERMINAL_STATUSES = ("complete", "error", "disconnected")
+# Keep at most MAX_JOBS_IN_MEMORY jobs in local memory. Terminal jobs beyond
+# the cap are evicted (they live in the Modal Dict, so get_crawl/hydrate still
+# find them); active jobs are never evicted. The cap, terminal statuses, and
+# selection algorithm live in app.job_store (torch-free, unit-tested in CI).
 
 
 def _persist_job(job: CrawlJobState) -> None:
@@ -199,12 +200,11 @@ def _evict_old_jobs() -> None:
     Active (queued/running) jobs are never evicted. Dict preserves insertion
     order, so iterating yields oldest-first.
     """
-    if len(_jobs) <= _MAX_JOBS_IN_MEMORY:
-        return
-    removable = [
-        jid for jid, j in _jobs.items() if j.status in _TERMINAL_STATUSES
-    ]
-    for jid in removable[: len(_jobs) - _MAX_JOBS_IN_MEMORY]:
+    for jid in select_evictable(
+        [(k, j.status) for k, j in _jobs.items()],
+        MAX_JOBS_IN_MEMORY,
+        TERMINAL_STATUSES,
+    ):
         _jobs.pop(jid, None)
 
 

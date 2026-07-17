@@ -1,0 +1,92 @@
+name: Deploy backend
+
+# Manual only — this deploys to Modal and runs the real GPU regression suite
+# (~10 min/env, costs A100 time), so it is never triggered automatically.
+# Run it during a maintenance window. Encodes the project's mandatory sequence:
+#   validate -> staging deploy -> staging regression -> (gated) prod -> prod regression
+#
+# The FRONTEND is not deployed here — Vercel auto-deploys it on push to main.
+#
+# Required repo secrets: MODAL_TOKEN_ID, MODAL_TOKEN_SECRET
+# Optional: protect the `production` GitHub Environment with a required
+# reviewer so the prod step pauses for a human click mid-run.
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_prod:
+        description: "After staging passes, also deploy to production"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+env:
+  MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+  MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "pydantic>=2" pytest
+      - name: Syntax check
+        run: |
+          python - <<'PY'
+          import ast, glob, sys
+          bad = 0
+          for f in glob.glob("backend/app/**/*.py", recursive=True) + ["modal_app.py"]:
+              try: ast.parse(open(f).read())
+              except SyntaxError as e: print(f"SyntaxError in {f}: {e}"); bad += 1
+          sys.exit(bad)
+          PY
+      - name: Unit tests
+        run: python -m pytest backend/tests_ci/ -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend type check
+        working-directory: frontend
+        run: npm ci && npx tsc --noEmit
+
+  staging:
+    name: Staging deploy + regression
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install modal websockets
+      - name: Deploy to staging
+        run: modal deploy --env staging modal_app.py
+      - name: Regression suite (staging)
+        run: python regression_suite.py --skip-judge --skip-axe
+
+  production:
+    name: Production deploy + regression
+    needs: staging
+    if: ${{ inputs.deploy_prod }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production   # add a required reviewer here to gate the click
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install modal websockets
+      - name: Deploy to production
+        run: modal deploy modal_app.py
+      - name: Regression suite (prod)
+        run: python regression_suite.py --prod --skip-judge --skip-axe
