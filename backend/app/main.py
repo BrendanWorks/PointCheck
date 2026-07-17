@@ -139,9 +139,11 @@ _analyzer: Optional[MolmoWebAnalyzer] = None
 #      follow-up WebSocket to DIFFERENT containers once it scales out. The WS
 #      handler hydrates queued jobs from this store when they aren't in local
 #      memory, so the scan starts regardless of which container got the POST.
-# Dict name is read from MODAL_JOBS_DICT env var; Modal's --env flag isolates
-# staging and prod into separate namespaces, so they never share state.
-# Falls back to no-op when running locally (modal package unavailable or no auth).
+# Screenshots are stripped before writing (see _persist_job) to keep values
+# well under Modal's per-value size limit. Dict name is read from
+# MODAL_JOBS_DICT env var; Modal's --env flag isolates staging and prod into
+# separate namespaces, so they never share state. Falls back to no-op when
+# running locally (modal package unavailable or no auth).
 
 _MODAL_DICT_NAME: str = os.environ.get("MODAL_JOBS_DICT", "pointcheck-jobs")
 _modal_store: Any = None          # modal.Dict handle once initialised
@@ -163,15 +165,47 @@ def _get_modal_store() -> Any | None:
     return _modal_store if _modal_store_ready else None
 
 
+# Keep at most this many jobs in local memory. Terminal jobs beyond the cap
+# are evicted (they live in the Modal Dict, so get_crawl/hydrate still find
+# them); active jobs are never evicted. Bounds growth in warm containers,
+# which now live much longer since the visual models stay resident.
+_MAX_JOBS_IN_MEMORY = 50
+_TERMINAL_STATUSES = ("complete", "error", "disconnected")
+
+
 def _persist_job(job: CrawlJobState) -> None:
-    """Write a job's current state to the persistent store. Fire-and-forget; never raises."""
+    """Write a job's current state to the persistent store. Fire-and-forget; never raises.
+
+    Screenshots (screenshot_b64) are stripped before writing: a multi-page
+    scan's base64 frames can push a single Dict value past Modal's size limit,
+    which would make the persist throw and silently break the permalink. Live
+    scans stream b64 over the WebSocket, and same-container permalinks read the
+    in-memory copy (which keeps b64), so this only affects permalinks opened
+    after a container recycle — those load the full report minus thumbnails.
+    """
     store = _get_modal_store()
     if store is None:
         return
     try:
-        store[job.job_id] = job.model_dump()
+        store[job.job_id] = strip_b64(job.model_dump())
     except Exception as exc:
         print(f"[jobs] Failed to persist job {job.job_id}: {exc}")
+
+
+def _evict_old_jobs() -> None:
+    """Drop the oldest terminal jobs from memory once over the cap.
+
+    Safe because terminal jobs are already persisted to the Modal Dict.
+    Active (queued/running) jobs are never evicted. Dict preserves insertion
+    order, so iterating yields oldest-first.
+    """
+    if len(_jobs) <= _MAX_JOBS_IN_MEMORY:
+        return
+    removable = [
+        jid for jid, j in _jobs.items() if j.status in _TERMINAL_STATUSES
+    ]
+    for jid in removable[: len(_jobs) - _MAX_JOBS_IN_MEMORY]:
+        _jobs.pop(jid, None)
 
 
 def _hydrate_job(job_id: str) -> Optional[CrawlJobState]:
@@ -412,6 +446,7 @@ async def ws_crawl(ws: WebSocket, job_id: str):
             job.completed_at = datetime.utcnow().isoformat()
             # Persist to Modal Dict so this job is retrievable after container restarts
             _persist_job(job)
+            _evict_old_jobs()
             _ka_stop[0] = True
             keepalive_task.cancel()
             await send({"type": "done", "job_id": job_id, "report": strip_b64(report)})
@@ -421,6 +456,7 @@ async def ws_crawl(ws: WebSocket, job_id: str):
         keepalive_task.cancel()
         job.status = "disconnected"
         _persist_job(job)
+        _evict_old_jobs()
     except Exception as e:
         _ka_stop[0] = True
         keepalive_task.cancel()
@@ -430,6 +466,7 @@ async def ws_crawl(ws: WebSocket, job_id: str):
         job.status = "error"
         job.error  = str(e)
         _persist_job(job)
+        _evict_old_jobs()
         try:
             await send({"type": "error", "message": str(e)})
         except Exception:

@@ -861,6 +861,13 @@ export default function ResultsDashboard({
                         alt={`Screenshot from ${ts.test_name}`}
                         className="rounded-lg max-w-full"
                         style={{ border: "1px solid var(--border)" }}
+                        // Permalinks opened after a container recycle keep the
+                        // report but not the on-disk screenshot; hide the whole
+                        // block rather than show a broken-image icon.
+                        onError={(e) => {
+                          const wrapper = e.currentTarget.parentElement;
+                          if (wrapper) wrapper.style.display = "none";
+                        }}
                       />
                     </div>
                   )}

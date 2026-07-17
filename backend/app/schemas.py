@@ -28,7 +28,7 @@ ALL_TESTS = [
 class CrawlRequest(BaseModel):
     url: str
     wcag_version: str = "2.2"       # "2.1" or "2.2"
-    max_pages: int = 30              # BFS page budget (capped at 30)
+    max_pages: int = 15              # BFS page budget (capped at 15)
     max_depth: int = 3               # BFS depth limit
     tests: list[str] = ALL_TESTS    # subset of ALL_TESTS
 
@@ -47,7 +47,9 @@ class CrawlRequest(BaseModel):
     @field_validator("max_pages")
     @classmethod
     def cap_pages(cls, v: int) -> int:
-        return min(max(1, v), 30)
+        # Cap kept in sync with the Modal function timeout (modal_app.py):
+        # 15 pages × ~90 s worst-case fits comfortably in the 1800 s budget.
+        return min(max(1, v), 15)
 
     @field_validator("max_depth")
     @classmethod

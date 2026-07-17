@@ -54,7 +54,10 @@ image = (
 @app.function(
     image=image,
     gpu="A100-40GB",
-    timeout=900,
+    # Must cover the longest scan the API will accept: max_pages (capped at 15
+    # in schemas.py) × worst-case ~90 s/page cold ≈ 1350 s, with margin.
+    # A shorter timeout would silently kill large crawls mid-scan.
+    timeout=1800,
     # Hard spend ceiling: at most 2 A100 containers, no matter the request
     # volume. Per-IP rate limiting in app/main.py handles burst control.
     max_containers=2,
