@@ -101,6 +101,18 @@ export default function RootLayout({
                   Allen AI MolmoWeb-8B, Molmo-7B-D &amp; OLMo-3
                 </a>
               </p>
+              <p>
+                Built by{" "}
+                <a
+                  href="https://www.linkedin.com/in/brendanworks/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "var(--lime)" }}
+                >
+                  Brendan Works, Ph.D.
+                </a>{" "}
+                &middot; Product manager, builder, and open-source tinkerer. Open to new roles.
+              </p>
               <p style={{ opacity: 0.75 }}>
                 Free while in beta &middot; Built in Seattle &middot; Not a replacement for manual audits
               </p>
